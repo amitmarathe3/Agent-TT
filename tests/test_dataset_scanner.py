@@ -24,6 +24,16 @@ def mock_config(tmp_path: Path, mock_zip_dataset: Path) -> Path:
     """Fixture creating a temporary configuration file pointing to mock zip dataset."""
     config_path = tmp_path / "config.yaml"
     content = f"""
+dataset_root: "{mock_zip_dataset.as_posix()}"
+metadata_file: "metadata.xlsx"
+folders:
+  selected: "selectedVideos"
+  nonselected: "nonselectedVideos"
+index_dir: "data_index"
+reports_dir: "reports"
+outputs_dir: "outputs"
+random_seed: 42
+image_extension: ".png"
 dataset:
   zip_path: "{mock_zip_dataset.as_posix()}"
   scan_output_path: "{(tmp_path / 'summary.json').as_posix()}"

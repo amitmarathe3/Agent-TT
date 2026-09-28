@@ -1,18 +1,20 @@
+dataset_root: "CADICA.zip"
+metadata_file: "metadata.xlsx"
+folders:
+  selected: "selectedVideos"
+  nonselected: "nonselectedVideos"
+index_dir: "data_index"
+reports_dir: "reports"
+outputs_dir: "outputs"
+random_seed: 42
+image_extension: ".png"
+
 dataset:
-  name: "CADICA"
   zip_path: "CADICA.zip"
   extracted_dir: "data/extracted"
-  index_dir: "data_index"
   scan_output_path: "data/dataset_summary.json"
-  num_patients: 42
-  bounding_box_format: "[x, y, w, h]"
-
-outputs:
-  dir: "outputs"
-  checkpoints_dir: "outputs/checkpoints"
-  logs_dir: "outputs/logs"
-  figures_dir: "reports/figures"
 
 logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  log_file: "outputs/logs/run.log"

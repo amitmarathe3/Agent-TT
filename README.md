@@ -63,21 +63,78 @@ CADICA-Agent/
 
 ---
 
-## 4. Setup Instructions
-1. **Prerequisites**: Python 3.10+
-2. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. **Configure Dataset Path**:
-   Ensure `configs/config.yaml` points to your local `CADICA.zip` archive or extracted data directory.
+## 4. Virtual Environment Setup Instructions
+
+### Prerequisites
+- Python 3.10+
+
+### Windows Setup (PowerShell / Command Prompt)
+```powershell
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment (PowerShell)
+.\.venv\Scripts\Activate.ps1
+
+# Or activate virtual environment (Command Prompt)
+.\.venv\Scripts\activate.bat
+
+# Upgrade pip and install dependencies
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### Linux / macOS Setup (Bash / Zsh)
+```bash
+# Create virtual environment
+python3 -m venv .venv
+
+# Activate virtual environment
+source .venv/bin/activate
+
+# Upgrade pip and install dependencies
+python3 -m pip install --upgrade pip
+pip install -r requirements.txt
+```
 
 ---
 
-## 5. Usage
+## 5. Configuration & Utilities Usage
 
-### Central Configuration Management
-All configuration parameters are specified in [`configs/config.yaml`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/configs/config.yaml).
+### Central Configuration Validation
+All key project options are centralized in [`configs/config.yaml`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/configs/config.yaml):
+- `dataset_root`: Path to dataset zip or extracted directory.
+- `metadata_file`: Clinical metadata file name (`metadata.xlsx`).
+- `folders`: Dictionary containing `selected` ("selectedVideos") and `nonselected` ("nonselectedVideos").
+- `index_dir`: Path for data indexing manifests (`data_index`).
+- `reports_dir`: Output reports directory (`reports`).
+- `outputs_dir`: Output logs and checkpoints directory (`outputs`).
+- `random_seed`: Deterministic random seed (`42`).
+- `image_extension`: Default image file extension (`.png`).
+
+Load and validate configuration programmatically:
+```python
+from src.utils.config import load_config
+
+config = load_config("configs/config.yaml")
+```
+
+### Central Logging Utility
+Retrieve a dual console/file logger writing to `outputs/logs/run.log`:
+```python
+from src.utils.logger import get_logger
+
+logger = get_logger(name="Agent-TT", log_file="outputs/logs/run.log", level="INFO")
+logger.info("Initializing Agent-TT pipeline...")
+```
+
+### Reproducibility & Random Seeding
+Enforce deterministic randomness across Python, NumPy, and PyTorch:
+```python
+from src.utils.seed import set_seed
+
+set_seed(42)
+```
 
 ### Dataset Scanner CLI
 Scan `CADICA.zip` or raw folder structures dynamically without copying dataset files into the repository:
