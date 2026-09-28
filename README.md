@@ -1,0 +1,137 @@
+# Agent-TT: Coronary Artery Disease Lesion Detection from ICA Images
+
+Agent-TT (CADICA-Agent) is an end-to-end medical imaging machine learning pipeline for coronary artery disease (CAD) lesion detection using Invasive Coronary Angiography (ICA) images from the CADICA dataset.
+
+---
+
+## 1. Project Overview
+Agent-TT is designed to assist cardiologists by automatically detecting and localizing coronary artery lesions from ICA video sequences and frame extractions. Built with modularity, strict configuration control, dynamic dataset discovery, and comprehensive evaluation metrics, Agent-TT provides a reproducible AI pipeline for CAD detection.
+
+---
+
+## 2. Dataset Description
+The project utilizes the **CADICA** dataset:
+- **Patients**: 42 patients (`p1` through `p42`).
+- **Modality**: Invasive Coronary Angiography (ICA) frame sequences and static images.
+- **Metadata**: [`metadata.xlsx`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data/dataset_summary.json) contains clinical parameters, patient metadata, and video classifications.
+- **Directory Layout**:
+  - `selectedVideos/`: Videos selected for detailed annotation and evaluation.
+  - `nonselectedVideos/`: Unselected angiographic sequences.
+- **Folder Convention**:
+  - `pX/vY/`: Patient `pX`, Video `vY` folder hierarchy (e.g., `p10/v1/`).
+  - `input/`: Contains frame image extractions (e.g., `p10_v1_00016.png`).
+  - `groundtruth/`: Contains lesion bounding box annotations (e.g., `p10_v1_00016.txt`).
+- **Control Files**:
+  - `selectedFrames.txt`: List of frames designated for training/testing.
+  - `lesionVideos.txt`: Videos containing confirmed CAD lesions.
+  - `nonlesionVideos.txt`: Control videos without lesions.
+- **Bounding Box Format**: `[x, y, w, h]` (x-coordinate, y-coordinate, width, height in pixels).
+
+---
+
+## 3. Project Structure
+```text
+CADICA-Agent/
+├── README.md                  # Main documentation file
+├── CHANGELOG.md               # Version history and task update log
+├── requirements.txt           # Project dependencies
+├── .gitignore                 # Exclusion rules for data, models, environments
+├── configs/
+│   └── config.yaml            # Central configuration file
+├── src/
+│   ├── __init__.py
+│   ├── data/
+│   │   ├── __init__.py
+│   │   └── dataset_scanner.py # Dataset discovery & zip scanning module
+│   ├── models/
+│   │   └── __init__.py        # Lesion detection model definitions
+│   ├── evaluation/
+│   │   └── __init__.py        # Evaluation metrics & loss functions
+│   └── utils/
+│       ├── __init__.py
+│       └── config.py          # Configuration loader & logging utilities
+├── scripts/                   # Execution scripts for training and preprocessing
+├── tests/
+│   ├── __init__.py
+│   ├── test_config.py         # Unit tests for config loader
+│   └── test_dataset_scanner.py# Unit tests for dataset scanner
+├── notebooks/                 # Exploratory data analysis notebooks
+├── reports/figures/           # Output evaluation figures and confusion matrices
+├── outputs/                   # Checkpoints, predictions, and logs (gitignored)
+└── data_index/                # Metadata index files and manifests (gitignored)
+```
+
+---
+
+## 4. Setup Instructions
+1. **Prerequisites**: Python 3.10+
+2. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. **Configure Dataset Path**:
+   Ensure `configs/config.yaml` points to your local `CADICA.zip` archive or extracted data directory.
+
+---
+
+## 5. Usage
+
+### Central Configuration Management
+All configuration parameters are specified in [`configs/config.yaml`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/configs/config.yaml).
+
+### Dataset Scanner CLI
+Scan `CADICA.zip` or raw folder structures dynamically without copying dataset files into the repository:
+```bash
+# Scan dataset zip archive specified in configs/config.yaml
+python -m src.data.dataset_scanner
+
+# Scan custom zip path and save output report
+python -m src.data.dataset_scanner --zip_path CADICA.zip --output data/dataset_summary.json
+
+# Scan extracted directory
+python -m src.data.dataset_scanner --dir_path data/extracted
+```
+
+### Running Unit Tests
+Execute the pytest suite:
+```bash
+python -m pytest tests/
+```
+
+---
+
+## 6. Roadmap (Phases 1-5)
+- **Phase 1: Project Setup & Dataset Indexing**
+  - Scaffold creation, config loader, logging, dynamic dataset scanner, metadata parser, and frame indexing.
+- **Phase 2: Data Preprocessing & Augmentation**
+  - ICA image normalization, CLAHE enhancement, vessel filtering, bounding box scaling, dataset splitters (patient-aware k-fold CV).
+- **Phase 3: Model Architecture & Training**
+  - Baseline object detection backbone (YOLO / Faster R-CNN / DETR adapted for ICA), loss functions, model trainer pipeline.
+- **Phase 4: Evaluation & Performance Analysis**
+  - Lesion detection metrics calculator, IoU thresholding, confusion matrix, mAP evaluation, ROC-AUC analysis.
+- **Phase 5: CLI Tooling, Reporting & Deployment**
+  - Inference CLI, summary reporting, automated figure generation, model export (ONNX/TorchScript).
+
+---
+
+## 7. Metrics Tracked
+Agent-TT evaluates CAD lesion detection using standard clinical & computer vision object detection metrics:
+- **Accuracy**: Overall classification accuracy on lesion vs non-lesion frames.
+- **Precision**: Proportion of true CAD lesions among detected bounding boxes.
+- **Recall (Sensitivity)**: Proportion of actual CAD lesions successfully detected.
+- **F1 Score**: Harmonic mean of Precision and Recall.
+- **IoU (Intersection over Union)**: Bounding box overlap quality measure.
+- **mAP@0.5**: Mean Average Precision at IoU threshold 0.50.
+- **mAP@0.5:0.95**: Mean Average Precision averaged over IoU thresholds 0.50 to 0.95 (step 0.05).
+- **Confusion Matrix**: True Positive, False Positive, True Negative, False Negative counts.
+- **ROC-AUC**: Area Under Receiver Operating Characteristic Curve for lesion frame classification.
+
+---
+
+## 8. Changelog Link
+For full version history and updates, view the [`CHANGELOG.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/CHANGELOG.md) file.
+
+---
+
+## 9. Update Log
+- **2026-09-29**: Phase 1.1 - Project scaffold created, CADICA dataset scanner implemented, central config system initialized, unit tests written and verified.

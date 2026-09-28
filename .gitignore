@@ -1,0 +1,45 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Dataset & Large Files (never commit dataset into repo)
+*.zip
+CADICA.zip
+data/
+data_extracted/
+data_index/*.csv
+data_index/*.json
+!data_index/.gitkeep
+*.dcm
+*.dicom
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.bmp
+
+# Model Weights & Artifact Outputs
+outputs/*
+!outputs/.gitkeep
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.h5
+*.ckpt
+reports/figures/*
+!reports/figures/.gitkeep
+
+# Environments & IDEs
+.env
+.venv/
+venv/
+env/
+ENV/
+.idea/
+.vscode/
+*.swp
+*.swo

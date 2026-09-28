@@ -1,0 +1,18 @@
+dataset:
+  name: "CADICA"
+  zip_path: "CADICA.zip"
+  extracted_dir: "data/extracted"
+  index_dir: "data_index"
+  scan_output_path: "data/dataset_summary.json"
+  num_patients: 42
+  bounding_box_format: "[x, y, w, h]"
+
+outputs:
+  dir: "outputs"
+  checkpoints_dir: "outputs/checkpoints"
+  logs_dir: "outputs/logs"
+  figures_dir: "reports/figures"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
