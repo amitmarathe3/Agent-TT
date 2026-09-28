@@ -136,6 +136,16 @@ from src.utils.seed import set_seed
 set_seed(42)
 ```
 
+### Dataset Validation CLI
+Validate dataset structural integrity, check metadata, patient video folders (`pX/vY`), frame input files, groundtruth labels, and generate a clear PASS/WARN/FAIL report:
+```bash
+# Validate dataset root specified in configs/config.yaml
+python -m scripts.validate_dataset
+
+# Validate specific zip archive or extracted directory and output custom report path
+python -m scripts.validate_dataset --dataset_root CADICA.zip --output reports/dataset_validation.txt
+```
+
 ### Dataset Scanner CLI
 Scan `CADICA.zip` or raw folder structures dynamically without copying dataset files into the repository:
 ```bash

@@ -2,6 +2,14 @@
 
 All notable changes to the Agent-TT (CADICA-Agent) project will be documented in this file.
 
+## [0.4.0] - 2026-09-29
+
+### Added
+- Dataset Validator module [`src/data/validator.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/validator.py) checking `metadata.xlsx`, `selectedVideos`/`nonselectedVideos` directories, patient folders (`pX`), video folders (`vY`), `input/` frame PNG files, `selectedFrames.txt`, control files (`lesionVideos.txt`, `nonlesionVideos.txt`), and groundtruth annotation matches.
+- Command-line interface script [`scripts/validate_dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/validate_dataset.py) for running validation and rendering clear status reports (`PASS`/`WARN`/`FAIL`).
+- Generated validation report at [`reports/dataset_validation.txt`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/dataset_validation.txt) (verified 42 patients, 668 video sequences, 31,499 image frames, 3,996 groundtruth labels with PASS status).
+- Unit test suite in [`tests/test_dataset_validator.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_dataset_validator.py) using a synthetic dataset fixture created in a temporary pytest environment (12 total tests passing clean).
+
 ## [0.3.0] - 2026-09-29
 
 ### Added

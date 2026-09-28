@@ -1,0 +1,14 @@
+==================================================
+        AGENT-TT DATASET VALIDATION REPORT        
+==================================================
+Overall Status: PASS
+--------------------------------------------------
+Dataset Statistics:
+  - Total Patients Detected:  42
+  - Total Video Sequences:     668
+  - Total Image Frames:        31499
+  - Total Groundtruth Labels:  3996
+--------------------------------------------------
+Inconsistencies & Issues (0 item(s)):
+  [NONE] All dataset checks passed cleanly.
+==================================================
