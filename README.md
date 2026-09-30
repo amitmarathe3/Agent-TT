@@ -136,6 +136,31 @@ from src.utils.seed import set_seed
 set_seed(42)
 ```
 
+### Dataset Indexing CLI & Manifest Generation
+Build structured CSV index tables and class mappings in [`data_index/`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index):
+
+```bash
+# Build full index across all 42 patients
+python -m scripts.build_index
+
+# Build index for a subset of patients (quick testing)
+python -m scripts.build_index --limit-patients 5
+
+# Override dataset root path
+python -m scripts.build_index --dataset_root CADICA.zip
+```
+
+#### Generated Index Schemas (`data_index/`):
+1. **`classes.json`**: Mapping of discovered stenosis categories to integer IDs (e.g. `p0_20`, `p20_50`, `p50_70`, `p70_90`, `p90_98`, `p90_99`, `p100`).
+2. **`frames_index.csv`**:
+   - `split_type`, `patient_id`, `video_id`, `frame_id`, `frame_path`, `is_selected_keyframe`, `has_lesion_video`, `has_groundtruth`, `image_width`, `image_height`
+3. **`annotations.csv`**:
+   - `patient_id`, `video_id`, `frame_id`, `frame_path`, `x`, `y`, `w`, `h`, `category`, `category_id`, `x_center`, `y_center`, `w_norm`, `h_norm` (YOLO-normalized)
+4. **`videos_index.csv`**:
+   - `patient_id`, `video_id`, `split_type`, `num_frames`, `num_selected_frames`, `is_lesion_video`, `num_annotated_frames`, `num_boxes`
+5. **`patients_index.csv`**:
+   - `patient_id`, `num_videos`, `num_selected_videos`, `num_nonselected_videos`, `num_frames`, `num_lesion_videos`, `num_boxes`
+
 ### Dataset Validation CLI
 Validate dataset structural integrity, check metadata, patient video folders (`pX/vY`), frame input files, groundtruth labels, and generate a clear PASS/WARN/FAIL report:
 ```bash

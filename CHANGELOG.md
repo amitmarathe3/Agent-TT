@@ -2,6 +2,18 @@
 
 All notable changes to the Agent-TT (CADICA-Agent) project will be documented in this file.
 
+## [0.5.0] - 2026-09-30
+
+### Added
+- Dataset Indexer module [`src/data/indexer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/indexer.py) generating CSV index manifests and class mapping JSON in [`data_index/`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index):
+  - [`data_index/frames_index.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/frames_index.csv): 31,500 frame records with split type, patient/video/frame IDs, keyframe status, groundtruth flags, and image dimensions.
+  - [`data_index/annotations.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/annotations.csv): 6,161 bounding box records with absolute `[x, y, w, h]` and YOLO-normalized `[x_center, y_center, w_norm, h_norm]` coordinates.
+  - [`data_index/videos_index.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/videos_index.csv): 668 video sequence summary records.
+  - [`data_index/patients_index.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/patients_index.csv): 42 patient summary records.
+  - [`data_index/classes.json`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/classes.json): Category string to integer mapping (`p0_20`, `p20_50`, `p50_70`, `p70_90`, `p90_98`, `p90_99`, `p100`).
+- CLI script [`scripts/build_index.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/build_index.py) with `--limit-patients` option for quick subset indexing and `--dataset_root` path override.
+- Unit test suite [`tests/test_dataset_indexer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_dataset_indexer.py) with synthetic dataset fixture and malformed text parsing tests (15 total tests passing clean).
+
 ## [0.4.0] - 2026-09-29
 
 ### Added
