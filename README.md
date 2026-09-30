@@ -151,15 +151,44 @@ python -m scripts.build_index --dataset_root CADICA.zip
 ```
 
 #### Generated Index Schemas (`data_index/`):
-1. **`classes.json`**: Mapping of discovered stenosis categories to integer IDs (e.g. `p0_20`, `p20_50`, `p50_70`, `p70_90`, `p90_98`, `p90_99`, `p100`).
-2. **`frames_index.csv`**:
-   - `split_type`, `patient_id`, `video_id`, `frame_id`, `frame_path`, `is_selected_keyframe`, `has_lesion_video`, `has_groundtruth`, `image_width`, `image_height`
-3. **`annotations.csv`**:
-   - `patient_id`, `video_id`, `frame_id`, `frame_path`, `x`, `y`, `w`, `h`, `category`, `category_id`, `x_center`, `y_center`, `w_norm`, `h_norm` (YOLO-normalized)
-4. **`videos_index.csv`**:
-   - `patient_id`, `video_id`, `split_type`, `num_frames`, `num_selected_frames`, `is_lesion_video`, `num_annotated_frames`, `num_boxes`
-5. **`patients_index.csv`**:
-   - `patient_id`, `num_videos`, `num_selected_videos`, `num_nonselected_videos`, `num_frames`, `num_lesion_videos`, `num_boxes`
+
+1. **`frames_index.csv`** — one row per image frame:
+
+   | Column | Description |
+   |---|---|
+   | `split_type` | `selected` or `nonselected` |
+   | `patient_id` | Patient identifier (e.g. `p10`) |
+   | `video_id` | Video sequence identifier (e.g. `v1`) |
+   | `frame_id` | Frame stem (e.g. `p10_v1_00016`) |
+   | `frame_path` | Path to frame PNG within zip/directory |
+   | `is_selected_keyframe` | `True` if listed in `selectedFrames.txt` |
+   | `has_lesion_video` | `True` if video is in `lesionVideos.txt` |
+   | `has_groundtruth` | `True` if a matching groundtruth `.txt` exists |
+   | `image_width` | Image width in pixels |
+   | `image_height` | Image height in pixels |
+
+2. **`annotations.csv`** — one row per bounding box:
+
+   | Column | Description |
+   |---|---|
+   | `patient_id`, `video_id`, `frame_id`, `frame_path` | Frame identifiers |
+   | `x`, `y`, `w`, `h` | Bounding box in absolute pixels `[x, y, w, h]` |
+   | `category` | Stenosis-percentage class label (e.g. `p0_20`, `p50_70`, `p100`) |
+   | `x_center`, `y_center` | YOLO-normalised box centre coordinates |
+   | `w_norm`, `h_norm` | YOLO-normalised box width and height |
+
+3. **`videos_index.csv`** — one row per video sequence:
+
+   `patient_id`, `video_id`, `split_type`, `num_frames`, `num_selected_frames`, `is_lesion_video`, `num_annotated_frames`, `num_boxes`
+
+4. **`patients_index.csv`** — one row per patient:
+
+   `patient_id`, `num_videos`, `num_selected_videos`, `num_nonselected_videos`, `num_frames`, `num_lesion_videos`, `num_boxes`
+
+5. **`classes.json`** — auto-discovered stenosis category → integer ID mapping:
+   ```json
+   { "p0_20": 0, "p100": 1, "p20_50": 2, "p50_70": 3, "p70_90": 4, "p90_98": 5, "p99": 6 }
+   ```
 
 ### Dataset Validation CLI
 Validate dataset structural integrity, check metadata, patient video folders (`pX/vY`), frame input files, groundtruth labels, and generate a clear PASS/WARN/FAIL report:

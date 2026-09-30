@@ -5,14 +5,16 @@ All notable changes to the Agent-TT (CADICA-Agent) project will be documented in
 ## [0.5.0] - 2026-09-30
 
 ### Added
-- Dataset Indexer module [`src/data/indexer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/indexer.py) generating CSV index manifests and class mapping JSON in [`data_index/`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index):
-  - [`data_index/frames_index.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/frames_index.csv): 31,500 frame records with split type, patient/video/frame IDs, keyframe status, groundtruth flags, and image dimensions.
-  - [`data_index/annotations.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/annotations.csv): 6,161 bounding box records with absolute `[x, y, w, h]` and YOLO-normalized `[x_center, y_center, w_norm, h_norm]` coordinates.
-  - [`data_index/videos_index.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/videos_index.csv): 668 video sequence summary records.
-  - [`data_index/patients_index.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/patients_index.csv): 42 patient summary records.
-  - [`data_index/classes.json`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/classes.json): Category string to integer mapping (`p0_20`, `p20_50`, `p50_70`, `p70_90`, `p90_98`, `p90_99`, `p100`).
-- CLI script [`scripts/build_index.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/build_index.py) with `--limit-patients` option for quick subset indexing and `--dataset_root` path override.
-- Unit test suite [`tests/test_dataset_indexer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_dataset_indexer.py) with synthetic dataset fixture and malformed text parsing tests (15 total tests passing clean).
+- Dataset Indexer module [`src/data/indexer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/indexer.py): scans CADICA zip or directory, auto-detects groundtruth format (`space`/`comma`-separated `x y w h [category]`), discovers all 7 stenosis categories, and builds four structured CSV tables.
+- CLI script [`scripts/build_index.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/build_index.py) with `--limit-patients` flag and `--dataset_root` override.
+- Generated index files in `data_index/` (full 42-patient run):
+  - `frames_index.csv` — 31,500 rows (one per frame)
+  - `annotations.csv` — 6,161 rows (one per bounding box, with YOLO-normalised coordinates)
+  - `videos_index.csv` — 668 rows (one per video)
+  - `patients_index.csv` — 42 rows (one per patient)
+  - `classes.json` — 7 categories: `p0_20 (0), p100 (1), p20_50 (2), p50_70 (3), p70_90 (4), p90_98 (5), p99 (6)`
+- 14 unit tests in [`tests/test_indexer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_indexer.py) covering `_parse_gt_line`, directory-based indexer, zip-based indexer, and helper utilities (26 total tests passing).
+- Updated [`README.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/README.md) with Dataset Indexing CLI usage and full schema tables for all five generated files.
 
 ## [0.4.0] - 2026-09-29
 
