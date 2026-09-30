@@ -501,14 +501,26 @@ The 42 CADICA patients were partitioned using stratified search into strictly no
 | **Fold 3** | 9 | 5,467 | 1,516 | `p100`: 0, `p99`: 16 | `p4, p6, p13, p21, p24, p27, p34, p39, p42` |
 | **Fold 4** | 9 | 5,647 | 1,201 | `p100`: 0, `p99`: 27 | `p2, p5, p15, p16, p17, p18, p26, p32, p38` |
 
-### Baseline Sanity Check Verification Results (Validation Split)
+### Baseline Sanity Check Verification Results (Canonical Evaluation Sets)
 
-| Baseline Predictor | Micro F1 | Macro F1 | mAP@0.5 | mAP@0.5:0.95 | Frame Accuracy | Status |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Oracle Baseline** (Ground Truth as Predictions) | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **PASS [OK]** |
-| **Random Baseline** (Stochastic Boxes & Scores) | `0.0011` | `0.0007` | `0.0099` | `0.0099` | `0.6363` | **PASS [OK]** |
+The evaluation framework was calibrated in Phase 3.1 using canonical evaluation sets (722 frames for `val`, 852 frames for `test`) across three baseline predictors:
 
----
+#### Validation Split (722 frames: 578 positive + 144 hard negative)
+| Baseline Predictor | Micro F1 | Macro F1 | mAP@0.5 | mAP@0.5:0.95 | Frame Acc | Frame PR-AUC | Status |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Oracle Baseline** (Ground Truth as Predictions) | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **PASS [OK]** |
+| **Jittered Oracle** (Bounding box shift ~0.22w, IoU ~ 0.64) | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`0.3000`** | **`1.0000`** | **`1.0000`** | **PASS [OK]** |
+| **Random Baseline** (Stochastic Boxes & Scores) | `0.0000` | `0.0000` | `0.0000` | `0.0000` | `0.4003` | `0.8034` | **PASS [OK]** |
+
+#### Test Split (852 frames: 682 positive + 170 hard negative)
+| Baseline Predictor | Micro F1 | Macro F1 | mAP@0.5 | mAP@0.5:0.95 | Frame Acc | Frame PR-AUC | Status |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Oracle Baseline** (Ground Truth as Predictions) | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **PASS [OK]** |
+| **Jittered Oracle** (Bounding box shift ~0.22w, IoU ~ 0.64) | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`0.3000`** | **`1.0000`** | **`1.0000`** | **PASS [OK]** |
+| **Random Baseline** (Stochastic Boxes & Scores) | `0.0000` | `0.0000` | `0.0000` | `0.0000` | `0.3815` | `0.7799` | **PASS [OK]** |
+
+> [!NOTE]
+> **Canonical Evaluation Sets vs Full Raw Frames**: By default, `evaluate.py` and `sanity_check.py` evaluate exclusively against canonical frames (annotated positive frames + vetted hard negative frames: 722 for val, 852 for test) defined in [`src/data/eval_sets.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/eval_sets.py). Passing `--full-frames` evaluates against all raw frames (e.g. 2,879 in val) and displays a clinical warning that unannotated frames from lesion videos may contain unlabeled stenosis.
 
 ## 8. Roadmap (Phases 1-5)
 - **Phase 1: Project Setup & Dataset Indexing** ✅ *(Complete - v0.1.0)*
@@ -561,6 +573,12 @@ For full version history and updates, view the [`CHANGELOG.md`](file:///c:/Users
 ---
 
 ## 11. Update Log
+- **2026-10-01**: **Phase 3.1 Complete (Release v0.2.1) - Evaluation Bugfixes & Canonical Evaluation Sets**:
+  - Fixed 101-point COCO-style AP interpolation envelope bug in [`src/evaluation/metrics.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/metrics.py): zero-TP classes now evaluate to AP exactly 0.0 (previously produced ~0.0099 due to artificial (0, 1.0) boundary prepending).
+  - Fixed frame-level PR-AUC calculation: replaced endpoint interpolation with step-integral matching `sklearn.metrics.average_precision_score`, correctly yielding PR-AUC = 1.0000 for Oracle (previously 0.6004).
+  - Created [`src/data/eval_sets.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/eval_sets.py) defining canonical validation (722 frames: 578 positive + 144 negative) and test (852 frames: 682 positive + 170 negative) evaluation sets matching `outputs/yolo_dataset/` images. Added `--full-frames` flag in [`scripts/evaluate.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/evaluate.py) with clinical warning regarding unannotated lesion video frames.
+  - Added Jittered Oracle baseline (shift factor 0.22, IoU ~ 0.64) to [`scripts/sanity_check.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/sanity_check.py) asserting mAP@0.5 = 1.0000 and mAP@0.5:0.95 = 0.3000 < mAP@0.5.
+  - 125 total automated pytest tests passing clean with zero warnings. Tagged git commit as `v0.2.1`.
 - **2026-10-01**: **Phase 2 Complete (Release v0.2.0) - Data Pipeline, Augmentation, Splits & Evaluation**:
   - Implemented evaluation sanity check runner ([`scripts/sanity_check.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/sanity_check.py)) proving perfect 1.0 metrics for Oracle predictor and near-zero for Random baseline.
   - Added unified Phase 2 execution runners ([`run_phase2.bat`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/run_phase2.bat), [`run_phase2.sh`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/run_phase2.sh), and `make phase2`).

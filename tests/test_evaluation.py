@@ -282,12 +282,12 @@ class TestAP:
         assert result["mAP_50_95"] <= result["mAP_50"] + 1e-6
 
     def test_pr_curve_boundary_points(self):
-        """PR curve must start at recall=0 and end at recall=1."""
+        """PR curve must start at recall=0 and reach achieved max recall."""
         scores = np.array([0.9, 0.7, 0.5])
         tp_flags = np.array([True, False, True])
         recs, precs = build_pr_curve(scores, tp_flags, n_gt=3)
         assert recs[0] == pytest.approx(0.0, abs=1e-6)
-        assert recs[-1] == pytest.approx(1.0, abs=1e-6)
+        assert recs[-1] == pytest.approx(2 / 3, abs=1e-6)
 
     def test_interpolated_ap_perfect_recall(self):
         """Curve with perfect recall at all thresholds = AP ~1."""
@@ -466,3 +466,63 @@ class TestSanityCheckBaselines:
                 assert 0.0 <= y <= 512.0
                 assert 0.0 <= score <= 1.0
                 assert cls_id in class_ids_3
+
+    def test_zero_tp_gives_ap_exactly_zero(self, class_ids_3):
+        """Zero TP must yield AP exactly 0.0 (fixing the 0.0099 envelope bug)."""
+        # Ground truths present, but predictions are completely disjoint
+        gts = {
+            "img1": [[10.0, 10.0, 50.0, 50.0, 0]],
+            "img2": [[100.0, 100.0, 30.0, 30.0, 1]],
+        }
+        preds = {
+            "img1": [[400.0, 400.0, 50.0, 50.0, 0.99, 0]],  # disjoint
+            "img2": [[400.0, 400.0, 30.0, 30.0, 0.95, 1]],  # disjoint
+        }
+        res_50 = compute_map(preds, gts, [0, 1], iou_threshold=0.5)
+        assert res_50[0] == 0.0
+        assert res_50[1] == 0.0
+        res_50_95 = compute_map_50_95(preds, gts, [0, 1])
+        assert res_50_95["mAP_50"] == 0.0
+        assert res_50_95["mAP_50_95"] == 0.0
+
+    def test_jittered_oracle_behavior(self, perfect_case, class_ids_3):
+        """Jittered oracle (IoU ~ 0.64) yields AP@0.5 == 1.0 and AP@0.5:0.95 < AP@0.5."""
+        from scripts.sanity_check import build_jittered_oracle_predictions
+        _, gts = perfect_case
+        jittered = build_jittered_oracle_predictions(gts, shift_factor=0.22)
+        res_50_95 = compute_map_50_95(jittered, gts, class_ids_3)
+        assert res_50_95["mAP_50"] == pytest.approx(1.0, abs=1e-5)
+        assert res_50_95["mAP_50_95"] < res_50_95["mAP_50"]
+        # With shift=0.22, IoU is ~0.64, so thresholds >= 0.65 fail (matches at 0.50, 0.55, 0.60 -> 3/10 = 0.3)
+        assert res_50_95["mAP_50_95"] == pytest.approx(0.30, abs=0.05)
+
+    def test_oracle_frame_pr_auc_is_one(self, perfect_case):
+        """Oracle frame-level PR-AUC must be exactly 1.0 (fixing the 0.6004 bug)."""
+        from scripts.sanity_check import build_oracle_predictions
+        _, gts = perfect_case
+        oracle = build_oracle_predictions(gts)
+        fmetrics = compute_frame_metrics(oracle, gts, conf_threshold=0.5)
+        assert fmetrics["pr_auc"] == pytest.approx(1.0, abs=1e-5)
+        assert fmetrics["roc_auc"] == pytest.approx(1.0, abs=1e-5)
+        assert fmetrics["accuracy"] == pytest.approx(1.0, abs=1e-5)
+
+
+class TestCanonicalEvalSets:
+    def test_canonical_frame_counts(self):
+        """Canonical eval sets must match exactly the YOLO dataset directory frames."""
+        import os
+        from src.data.eval_sets import get_canonical_eval_frame_ids
+        if os.path.exists("outputs/yolo_dataset/images/val"):
+            val_ids = get_canonical_eval_frame_ids("val")
+            assert len(val_ids) == 722
+        if os.path.exists("outputs/yolo_dataset/images/test"):
+            test_ids = get_canonical_eval_frame_ids("test")
+            assert len(test_ids) == 852
+
+    def test_full_frames_warning(self):
+        """load_eval_ground_truth with full_frames=True must warn."""
+        import warnings
+        from src.data.eval_sets import load_eval_ground_truth
+        with pytest.warns(UserWarning, match=r"--full-frames"):
+            load_eval_ground_truth("val", scheme="7class", full_frames=True)
+

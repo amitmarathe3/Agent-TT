@@ -2,6 +2,30 @@
 
 All notable changes to the Agent-TT (CADICA-Agent) project will be documented in this file.
 
+## [0.2.1] - 2026-10-01 - Phase 3.1: Evaluation Framework Bugfixes & Canonical Evaluation Sets
+
+### Milestone Summary
+Phase 3.1 resolves critical evaluation metric bugs discovered prior to model training, defines canonical evaluation datasets matching exported YOLO validation and test splits, and introduces a calibrated Jittered Oracle baseline to certify that `mAP@0.5` and `mAP@0.5:0.95` respond correctly to localization displacement. All 125 project tests pass with zero warnings, and both `val` (722 frames) and `test` (852 frames) pass all sanity check assertions.
+
+### Fixed
+- **AP Precision Envelope & Zero-TP Bug**:
+  - Previously, `build_pr_curve` artificially prepended `(0.0, 1.0)` to precision and recall arrays, causing the 101-threshold interpolation to sample precision 1.0 at threshold $r=0.0$, leading to non-zero average precision ($\approx 1/101 = 0.0099$) even for predictors with zero True Positives.
+  - Rewrote 101-point COCO-style interpolation in [`src/evaluation/metrics.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/metrics.py) with an exact precision envelope where precision at recall threshold $r$ is $\max(\text{precisions}[\text{recalls} \ge r])$ or $0.0$ if no recall satisfies the threshold. Predictors with zero TPs now evaluate to AP exactly $0.0000$.
+- **Frame-Level PR-AUC Bug**:
+  - Previously, `_compute_pr` prepended baseline prevalence $P = \frac{n_{\text{pos}}}{n_{\text{pos}} + n_{\text{neg}}}$ and applied a trapezoid integral that bridged from $(0.0, 1.0)$ down to baseline, yielding PR-AUC of 0.6004 for a perfect Oracle predictor.
+  - Replaced trapezoidal integration with a step-integral formulation matching `sklearn.metrics.average_precision_score` ($\sum (R_k - R_{k-1}) P_k$). Perfect Oracle predictions now achieve frame PR-AUC = 1.0000.
+
+### Added
+- **Canonical Evaluation Datasets ([`src/data/eval_sets.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/eval_sets.py))**:
+  - Defined canonical evaluation frames matching `outputs/yolo_dataset/images/<split>/` (positives + vetted hard negatives): exactly 722 frames for `val` (578 positives, 144 negatives) and 852 frames for `test` (682 positives, 170 negatives).
+  - Wired [`scripts/evaluate.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/evaluate.py) and [`scripts/sanity_check.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/sanity_check.py) to load canonical frames by default.
+  - Added `--full-frames` flag with a prominent clinical notice warning that evaluating against all raw frames (e.g. 2,879 in val) treats unannotated sequence frames from lesion videos as false negatives despite potentially harboring unlabeled lesions.
+- **Jittered Oracle Baseline Predictor**:
+  - Added `build_jittered_oracle_predictions` in [`scripts/sanity_check.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/sanity_check.py) that shifts ground-truth boxes by $0.22 \times \text{width}$, resulting in mean IoU $\approx 0.64$.
+  - Sanity check and unit tests verify that Jittered Oracle achieves perfect $\text{mAP}@0.5 = 1.0000$ while $\text{mAP}@0.5:0.95 = 0.3000 < \text{mAP}@0.5$.
+- **Test Suite Expansion**:
+  - Added unit tests in [`tests/test_evaluation.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_evaluation.py) for zero-TP AP=0.0, Jittered Oracle mAP response, Oracle frame PR-AUC=1.0, canonical frame counts, and `--full-frames` warning emission. Total passing tests: 125 (100% pass rate).
+
 ## [0.2.0] - 2026-10-01 - Phase 2 Complete: Data Pipeline, Augmentation, Splits & Evaluation
 
 ### Milestone Summary

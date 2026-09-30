@@ -95,67 +95,31 @@ def load_gt_from_split(
     scheme: str,
     index_dir: Path,
     config: dict,
+    yolo_dir: Path | str = "outputs/yolo_dataset",
+    full_frames: bool = False,
 ) -> tuple[dict[str, list[list[float]]], dict[str, str]]:
-    """Load ground-truth boxes from frames_index.csv + annotations.csv for a split.
+    """Load ground-truth boxes for a split using canonical evaluation frames by default.
 
     Args:
-        split: 'train', 'val', or 'test'.
+        split: 'train', 'val', 'test', or 'all'.
         scheme: Class scheme name.
         index_dir: Path to data_index/ directory.
         config: Project configuration dict.
+        yolo_dir: Path to exported YOLO dataset directory.
+        full_frames: If True, evaluates against all video sequence frames.
 
     Returns:
         (ground_truths, frame_to_patient): GT dict and patient mapping.
     """
-    frames_path = index_dir / "frames_index.csv"
-    ann_path = index_dir / "annotations.csv"
-    splits_path = index_dir / "splits" / "split_v1.csv"
-
-    if not frames_path.exists() or not ann_path.exists():
-        raise FileNotFoundError(f"Index files not found in {index_dir}. Run build_index.py first.")
-
-    frames_df = pd.read_csv(frames_path)
-    ann_df = pd.read_csv(ann_path)
-
-    if split != "all":
-        if not splits_path.exists():
-            raise FileNotFoundError(f"Splits file not found: {splits_path}. Run make_splits.py first.")
-        split_df = pd.read_csv(splits_path)
-        split_patients = set(split_df[split_df["split"] == split]["patient_id"])
-        frames_df = frames_df[frames_df["patient_id"].isin(split_patients)]
-        ann_df = ann_df[ann_df["patient_id"].isin(split_patients)]
-
-    class_mapping = _resolve_scheme(scheme, config)
-
-    ground_truths: dict[str, list[list[float]]] = {}
-    frame_to_patient: dict[str, str] = {}
-
-    for _, row in frames_df.iterrows():
-        fid = str(row["frame_id"])
-        ground_truths[fid] = []
-        frame_to_patient[fid] = str(row["patient_id"])
-
-    for _, row in ann_df.iterrows():
-        fid = str(row["frame_id"])
-        category = str(row["category"])
-        if category not in class_mapping:
-            continue
-        cls_id = class_mapping[category]
-        # Use absolute pixel coords from index (image is 512x512)
-        w_img = float(row.get("image_width", 512))
-        h_img = float(row.get("image_height", 512))
-        xc_n = float(row["x_center"])
-        yc_n = float(row["y_center"])
-        wn = float(row["w_norm"])
-        hn = float(row["h_norm"])
-        x = (xc_n - wn / 2) * w_img
-        y = (yc_n - hn / 2) * h_img
-        w = wn * w_img
-        h = hn * h_img
-        if fid in ground_truths:
-            ground_truths[fid].append([x, y, w, h, cls_id])
-
-    return ground_truths, frame_to_patient
+    from src.data.eval_sets import load_eval_ground_truth
+    return load_eval_ground_truth(
+        split=split,
+        scheme=scheme,
+        yolo_dir=yolo_dir,
+        index_dir=index_dir,
+        full_frames=full_frames,
+        config=config,
+    )
 
 
 def _resolve_scheme(scheme: str, config: dict) -> dict[str, int]:
@@ -237,6 +201,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--index-dir", type=str, default="data_index",
         help="Path to data_index/ directory.",
     )
+    parser.add_argument(
+        "--yolo-dir", type=str, default="outputs/yolo_dataset",
+        help="Path to exported YOLO dataset directory with canonical eval images.",
+    )
+    parser.add_argument(
+        "--full-frames", action="store_true",
+        help="Evaluate against all sequence frames (warns about unannotated frames).",
+    )
     return parser.parse_args(argv)
 
 
@@ -273,7 +245,12 @@ def main(argv: list[str] | None = None) -> None:
         logger.info("Loaded ground truths: %d images", len(ground_truths))
     else:
         ground_truths, frame_to_patient = load_gt_from_split(
-            args.split, args.scheme, Path(args.index_dir), config
+            args.split,
+            args.scheme,
+            Path(args.index_dir),
+            config,
+            yolo_dir=Path(args.yolo_dir),
+            full_frames=args.full_frames,
         )
         logger.info("Loaded GT from split '%s': %d images", args.split, len(ground_truths))
 

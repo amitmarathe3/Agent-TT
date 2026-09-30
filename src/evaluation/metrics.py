@@ -36,6 +36,10 @@ _trapezoid = getattr(np, "trapezoid", np.trapz)
 def _interpolate_ap_101(recalls: np.ndarray, precisions: np.ndarray) -> float:
     """Compute Average Precision using 101-point COCO-style interpolation.
 
+    Precision at recall threshold r in {0.00, 0.01, ..., 1.00} is the maximum
+    precision observed at recall >= r, or 0.0 if no prediction achieves recall >= r.
+    A predictor with zero true positives yields an AP of exactly 0.0.
+
     Args:
         recalls: Array of recall values in ascending order.
         precisions: Array of precision values corresponding to recalls.
@@ -43,12 +47,19 @@ def _interpolate_ap_101(recalls: np.ndarray, precisions: np.ndarray) -> float:
     Returns:
         Average Precision (AP) as a float in [0, 1].
     """
+    if len(recalls) == 0 or len(precisions) == 0 or np.all(precisions == 0) or np.all(recalls == 0):
+        return 0.0
+
     recall_thresholds = np.linspace(0.0, 1.0, 101)
-    ap = 0.0
-    for thr in recall_thresholds:
-        prec_at_thr = precisions[recalls >= thr]
-        ap += float(np.max(prec_at_thr)) if len(prec_at_thr) > 0 else 0.0
-    return ap / 101.0
+    prec_at_thr = []
+    for r in recall_thresholds:
+        mask = (recalls >= r)
+        if np.any(mask):
+            prec_at_thr.append(float(np.max(precisions[mask])))
+        else:
+            prec_at_thr.append(0.0)
+
+    return float(np.mean(prec_at_thr))
 
 
 # ---------------------------------------------------------------------------
@@ -70,20 +81,20 @@ def build_pr_curve(
     Returns:
         (recalls, precisions) arrays sorted by ascending recall.
     """
-    if len(all_scores) == 0 or n_gt == 0:
-        return np.array([0.0, 1.0]), np.array([1.0, 0.0])
+    if len(all_scores) == 0 or n_gt == 0 or not np.any(all_tp_flags):
+        return np.array([0.0, 1.0]), np.array([0.0, 0.0])
 
     order = np.argsort(-all_scores)
     tp_cumsum = np.cumsum(all_tp_flags[order].astype(float))
     fp_cumsum = np.cumsum((~all_tp_flags[order]).astype(float))
 
     recalls = tp_cumsum / max(n_gt, 1)
-    precisions = tp_cumsum / (tp_cumsum + fp_cumsum + 1e-9)
+    precisions = tp_cumsum / (tp_cumsum + fp_cumsum)
 
-    # Prepend (0, 1) and append (1, 0) for completeness
-    recalls = np.concatenate([[0.0], recalls, [1.0]])
-    precisions = np.concatenate([[1.0], precisions, [0.0]])
-    return recalls, precisions
+    # Prepend recall=0 with the initial precision for clean plotting
+    recalls_plot = np.concatenate([[0.0], recalls])
+    precisions_plot = np.concatenate([[precisions[0]], precisions])
+    return recalls_plot, precisions_plot
 
 
 # ---------------------------------------------------------------------------
@@ -141,8 +152,8 @@ def compute_class_ap(
             all_scores.append(float(p[4]))
             all_tp_flags.append(i in tp_set)
 
-    if len(all_scores) == 0 or n_gt_total == 0:
-        return 0.0, np.array([0.0, 1.0]), np.array([1.0, 0.0])
+    if len(all_scores) == 0 or n_gt_total == 0 or not any(all_tp_flags):
+        return 0.0, np.array([0.0, 1.0]), np.array([0.0, 0.0])
 
     recalls, precisions = build_pr_curve(
         np.array(all_scores, dtype=np.float64),
@@ -558,28 +569,44 @@ def _compute_roc(scores: np.ndarray, labels: np.ndarray) -> tuple[float, np.ndar
 
 
 def _compute_pr(scores: np.ndarray, labels: np.ndarray) -> tuple[float, np.ndarray, np.ndarray]:
-    """Compute Precision-Recall curve and AUC from scratch."""
-    thresholds = np.sort(np.unique(scores))[::-1]
-    precs: list[float] = []
-    recs: list[float] = []
+    """Compute Precision-Recall curve and PR-AUC (Average Precision) for binary classification.
 
-    n_pos = np.sum(labels == 1)
+    Follows scikit-learn's standard step-integral calculation for average precision:
+        AP = sum_{i=1}^N (R_i - R_{i-1}) * P_i
+    Guarantees an oracle predictor (perfect separation) achieves PR-AUC = 1.0.
+
+    Args:
+        scores: Continuous confidence scores [N].
+        labels: Binary ground-truth labels {0, 1} [N].
+
+    Returns:
+        (pr_auc, recalls, precisions) tuple.
+    """
+    n_pos = int(np.sum(labels == 1))
     if n_pos == 0:
-        return 0.0, np.array([0.0, 1.0]), np.array([1.0, 0.0])
+        return 0.0, np.array([0.0, 1.0]), np.array([0.0, 0.0])
 
-    for thr in thresholds:
-        pred = (scores >= thr).astype(int)
-        tp = np.sum((pred == 1) & (labels == 1))
-        fp = np.sum((pred == 1) & (labels == 0))
-        fn = np.sum((pred == 0) & (labels == 1))
-        precs.append(float(tp / (tp + fp + 1e-9)))
-        recs.append(float(tp / (tp + fn + 1e-9)))
+    order = np.argsort(-scores)
+    sorted_scores = scores[order]
+    sorted_labels = labels[order]
 
-    rec = np.array([1.0] + recs + [0.0])
-    prec = np.array([n_pos / (n_pos + np.sum(labels == 0) + 1e-9)] + precs + [1.0])
+    # Distinct score threshold indices (matching scikit-learn precision_recall_curve)
+    distinct_value_indices = np.where(np.diff(sorted_scores))[0]
+    threshold_idxs = np.r_[distinct_value_indices, sorted_labels.size - 1]
 
-    auc = float(_trapezoid(prec[::-1], rec[::-1]))
-    return auc, rec, prec
+    tps = np.cumsum(sorted_labels)[threshold_idxs]
+    fps = np.cumsum(1 - sorted_labels)[threshold_idxs]
+
+    recalls = tps / n_pos
+    precisions = tps / (tps + fps)
+
+    # Prepend boundary point (rec=0.0, prec=1.0)
+    recalls_padded = np.r_[0.0, recalls]
+    precisions_padded = np.r_[1.0, precisions]
+
+    # Step integral matching average_precision_score: sum_{i=1}^N (R_i - R_{i-1}) * P_i
+    pr_auc = float(np.sum((recalls_padded[1:] - recalls_padded[:-1]) * precisions))
+    return pr_auc, recalls_padded, precisions_padded
 
 
 # ---------------------------------------------------------------------------
