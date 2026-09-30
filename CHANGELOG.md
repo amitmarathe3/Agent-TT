@@ -2,6 +2,37 @@
 
 All notable changes to the Agent-TT (CADICA-Agent) project will be documented in this file.
 
+## [0.3.0] - 2026-10-01 - Phase 2.2 Complete: Data Pipeline, YOLO Export & Medical Augmentation
+
+### Added
+- **YOLO Dataset Exporter**:
+  - Implemented `YOLOExporter` in [`src/data/yolo_export.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/yolo_export.py) and CLI runner [`scripts/export_yolo.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/export_yolo.py).
+  - Builds standard Ultralytics YOLO structure in `outputs/yolo_dataset/` (`images/{train,val,test}/`, `labels/{train,val,test}/`, `data.yaml`).
+  - Strict image linkage: uses symlinks (or copy fallback) and reads directly from `CADICA.zip` or unpacked directories without checking raw images into version control.
+  - Hard negative frame sampling via `--neg-ratio` (default `0.25`), selecting clean lesion-free frames from nonlesion videos and unannotated frames in lesion videos that are $\ge 15$ frames away from annotated keyframes (written with empty `.txt` labels).
+  - Multi-class scheme support via `--scheme`: `7class` (all 7 stenosis tiers), `binary` (`normal`, `lesion`), and `severity3` (`mild`, `moderate`, `severe`).
+  - Cross-validation fold export via `--fold N` (0 to 4), mapping fold assignments into test, val, and train sets.
+  - Successfully exported full dataset: 4,994 images (3,996 positive frames + 998 sampled hard negatives) and 6,161 bounding boxes with zero patient leakage.
+- **PyTorch Dataset for Custom Models**:
+  - Implemented `CADICADataset` in [`src/data/dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/dataset.py).
+  - Dynamic image loading from zip archives or filesystem directories with RGB conversion and optional float32 normalization.
+  - Returns dictionary items: `image` (Tensor [3, H, W]), `boxes` (Tensor [N, 4]), `labels` (Tensor [N]), `patient_id` (str), `frame_id` (str), and optional clinical `metadata` features (normalized age, BMI, CAD risk flags).
+  - Custom `collate_fn` handles variable box counts per frame and collates batches for custom PyTorch architectures.
+- **Angiography-Safe Medical Data Augmentations**:
+  - Implemented `get_train_transforms` and `get_val_transforms` in [`src/data/augment.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/augment.py) using Albumentations.
+  - Tailored to invasive coronary angiography (ICA) physics and clinical morphology: CLAHE contrast enhancement, RandomBrightnessContrast, RandomGamma, GaussianBlur / GaussNoise, mild rotation ($\pm 10^\circ$), scaling (0.9–1.1), subtle translation, and optional horizontal flipping.
+  - **Clinical Safety Constraints**: Strictly NO vertical flip (preserves catheter top-down anatomical orientation), NO color/hue jitter (preserves grayscale X-ray absorption physics), and NO aggressive crops (prevents cutting off stenosis lesions).
+  - Added bbox post-transform safety bounding function `clip_yolo_boxes` preventing boundary overflow.
+- **Pipeline Visualizer & Normalization Statistics**:
+  - Implemented [`scripts/visualize_pipeline.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/visualize_pipeline.py).
+  - Generates 3×4 sample grid with bounding boxes drawn and labeled at [`reports/figures/augmentation_check.png`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/figures/augmentation_check.png).
+  - Computed exact per-channel mean and standard deviation across all 3,496 training frames, saved to [`data_index/norm_stats.json`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/norm_stats.json): `mean: [0.5066, 0.5066, 0.5066]`, `std: [0.1385, 0.1385, 0.1385]`.
+- **Test Suite**:
+  - Created [`tests/test_augment.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_augment.py) (5 tests), [`tests/test_dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_dataset.py) (5 tests), and [`tests/test_yolo_export.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_yolo_export.py) (5 tests).
+  - All 84 project unit tests passing clean (100% pass rate).
+- **Makefile Targets**:
+  - Added `export-yolo` and `visualize-pipeline` targets to [`Makefile`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/Makefile).
+
 ## [0.2.0] - 2026-10-01 - Phase 2.1 Complete: Patient-Wise Splits & Cross-Validation
 
 ### Added

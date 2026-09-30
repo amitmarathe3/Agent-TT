@@ -250,7 +250,49 @@ python scripts/make_splits.py
   - [`data_index/splits/folds_5.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/splits/folds_5.csv) — 5-Fold patient assignments (8, 8, 8, 9, 9 patients)
   - [`data_index/splits/splits_report.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/splits/splits_report.md) — Comprehensive split balance and leakage verification report
 
-#### Step 6: Run Verification Test Suite
+#### Step 6: Export Ultralytics YOLO Dataset with Hard Negatives (Phase 2.2)
+Builds a standard YOLO-format dataset in `outputs/yolo_dataset/` (`images/` and `labels/` for train/val/test splits, plus `data.yaml`) using symlinks (or copy fallback). Positives are strictly annotated frames. Dynamically samples hard negative lesion-free frames (from nonlesion videos, plus unannotated frames in lesion videos that are $\ge 15$ frames away from annotated keyframes) with empty label files at `--neg-ratio` (default `0.25`). Supports `--scheme` (`7class`, `binary`, `severity3`) and cross-validation `--fold N` (0 to 4):
+
+```bash
+python scripts/export_yolo.py --scheme 7class --neg-ratio 0.25
+# Or: make export-yolo
+```
+
+- **Expected Console Output**:
+  - `Exporting train: 2,797 positive frames, 699 negative frames (ratio: 0.25)`
+  - `Exporting val: 512 positive frames, 128 negative frames (ratio: 0.25)`
+  - `Exporting test: 687 positive frames, 171 negative frames (ratio: 0.25)`
+  - `Wrote YOLO data configuration to outputs/yolo_dataset/data.yaml`
+  - `Total Images: 4,994 (3,996 positive frames, 998 hard negative frames)`
+  - `Total Bounding Boxes: 6,161`
+- **Expected Artifacts Generated**:
+  - `outputs/yolo_dataset/data.yaml` — Ultralytics YOLO dataset configuration file
+  - `outputs/yolo_dataset/images/{train,val,test}/` — Symlinked/extracted PNG angiography frames
+  - `outputs/yolo_dataset/labels/{train,val,test}/` — Normalized bounding box label text files (empty for negatives)
+
+#### Step 7: Verify Augmentations & Compute Normalization Statistics (Phase 2.2)
+Computes exact per-channel mean and standard deviation across all angiography training frames and generates an inspection grid of 12 augmented training samples with bounding boxes drawn:
+
+```bash
+python scripts/visualize_pipeline.py --samples 12
+# Or: make visualize-pipeline
+```
+
+- **Expected Console Output**:
+  - `Computing dataset normalization statistics on train split (3,496 frames)...`
+  - `Computed statistics across 3,496 frames:`
+  - `Mean: [0.5066, 0.5066, 0.5066]`
+  - `Std:  [0.1385, 0.1385, 0.1385]`
+  - `Saved normalization stats to data_index/norm_stats.json`
+  - `Saved augmentation check grid to reports/figures/augmentation_check.png`
+- **Expected Artifacts Generated**:
+  - [`data_index/norm_stats.json`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/norm_stats.json) — Dataset channel intensity statistics
+  - [`reports/figures/augmentation_check.png`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/figures/augmentation_check.png) — 3×4 visual verification grid of augmented angiography images
+
+#### Step 8: PyTorch CADICADataset API & Custom Models
+[`src/data/dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/dataset.py) provides a flexible PyTorch `Dataset` (`CADICADataset`) returning standard dictionary items `{"image", "boxes", "labels", "patient_id", "frame_id", "metadata"}` with custom batching via `CADICADataset.collate_fn`. Supported by angiography-safe Albumentations pipelines in [`src/data/augment.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/augment.py) (CLAHE, brightness/contrast, gamma, noise/blur, rotation $\pm 10^\circ$, scaling 0.9–1.1; strictly **NO vertical flip**, **NO color jitter**, **NO lesion-slicing aggressive crops**).
+
+#### Step 9: Run Verification Test Suite
 Executes the comprehensive automated pytest test suite:
 
 ```bash
@@ -258,44 +300,61 @@ pytest -v
 # Or: make test
 ```
 
-- **Expected Console Output**: `69 passed in ~40s`
+- **Expected Console Output**: `84 passed in ~100s`
 
 ---
 
 ### Python API & Utility Usage
 
 ```python
-from src.utils.config import load_config
-from src.utils.logger import get_logger
-from src.utils.seed import set_seed
-from src.data.validator import DatasetValidator
-from src.data.indexer import DatasetIndexer
-from src.data.metadata import MetadataInspector
-from src.data.eda import DatasetEDA
-from src.data.splits import PatientSplitter
+import torch
+from torch.utils.data import DataLoader
+import pandas as pd
 
-# 1. Reproducibility & logging
+from src.utils.config import load_config
+from src.utils.seed import set_seed
+from src.data.augment import get_train_transforms, get_val_transforms
+from src.data.dataset import CADICADataset
+from src.data.yolo_export import YOLOExporter
+
+# 1. Reproducibility & configuration
 set_seed(42)
-logger = get_logger("Agent-TT")
 config = load_config("configs/config.yaml")
 
-# 2. Programmatic validation & indexing
-validator = DatasetValidator(config_path="configs/config.yaml")
-val_results = validator.validate()
+# 2. Export YOLO format dataset with hard negatives
+exporter = YOLOExporter(
+    config_path="configs/config.yaml",
+    output_dir="outputs/yolo_dataset",
+    scheme="7class",
+    neg_ratio=0.25,
+)
+export_stats = exporter.export()
 
-indexer = DatasetIndexer(config_path="configs/config.yaml")
-manifests = indexer.build_all()
+# 3. Initialize PyTorch Dataset with Angiography-safe Augmentations
+frames_df = pd.read_csv("data_index/frames_index.csv")
+ann_df = pd.read_csv("data_index/annotations.csv")
+train_transforms = get_train_transforms(image_size=512, bbox_format="yolo")
 
-# 3. Clinical metadata inspection & EDA
-inspector = MetadataInspector(config_path="configs/config.yaml")
-meta_clean = inspector.clean_and_save()
+train_dataset = CADICADataset(
+    frames_df=frames_df[frames_df["patient_id"].isin(["p1", "p2"])],
+    annotations_df=ann_df,
+    transform=train_transforms,
+    class_scheme="7class",
+    normalize=True,
+)
 
-eda = DatasetEDA(config_path="configs/config.yaml")
-eda.run_all()
+loader = DataLoader(
+    train_dataset,
+    batch_size=4,
+    shuffle=True,
+    collate_fn=CADICADataset.collate_fn,
+)
 
-# 4. Patient-wise splitting and K-fold CV
-splitter = PatientSplitter(config_path="configs/config.yaml")
-split_path, folds_path, report_path = splitter.run_all()
+for batch in loader:
+    images = batch["images"]       # Tensor: [B, 3, 512, 512]
+    boxes = batch["boxes"]         # List of Tensors: [Ni, 4]
+    labels = batch["labels"]       # List of Tensors: [Ni]
+    break
 ```
 
 ---
@@ -355,8 +414,8 @@ split_path, folds_path, report_path = splitter.run_all()
   - Scaffold creation, config loader, logging, dynamic dataset scanner, validator, metadata parser, frame indexing, and EDA.
 - **Phase 2: Data Preprocessing & Augmentation** 🔄 *(In Progress)*
   - **Phase 2.1: Patient-Wise Splits & Stratified Cross-Validation** ✅ *(Complete)*: Patient-level 70/15/15 train/val/test splits (`split_v1.csv`), 5-fold cross-validation (`folds_5.csv`), zero leakage verification, and 3 configurable class schemes (`7class`, `binary`, `severity3`).
-  - **Phase 2.2: Image Preprocessing & Normalization**: ICA pixel intensity calibration, CLAHE enhancement, vessel filtering.
-  - **Phase 2.3: Data Augmentation**: Medical imaging geometric & photometric transforms with bounding-box preservation.
+  - **Phase 2.2: Data Pipeline, YOLO Export & Medical Augmentation** ✅ *(Complete)*: YOLO dataset exporter (`YOLOExporter`) with hard negative sampling, PyTorch `CADICADataset` with clinical metadata, angiography-safe Albumentations transforms, visual check grid, and normalization statistics.
+  - **Phase 2.3: Image Enhancement & Filtering**: Vessel enhancement filtering (Frangi/Hessian) and contrast pre-processing for low-visibility lesions.
 - **Phase 3: Model Architecture & Training**
   - Baseline object detection backbone (YOLOv8 / Faster R-CNN / DETR adapted for ICA), loss functions, model trainer pipeline.
 - **Phase 4: Evaluation & Performance Analysis**
@@ -386,6 +445,12 @@ For full version history and updates, view the [`CHANGELOG.md`](file:///c:/Users
 ---
 
 ## 10. Update Log
+- **2026-10-01**: **Phase 2.2 Complete - Data Pipeline, YOLO Export & Medical Augmentation**:
+  - Implemented `YOLOExporter` ([`src/data/yolo_export.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/yolo_export.py)) and CLI ([`scripts/export_yolo.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/export_yolo.py)) generating standard Ultralytics YOLO dataset in `outputs/yolo_dataset/` (`images/`, `labels/`, `data.yaml`) with symlinks/copy, configurable schemes (`7class`, `binary`, `severity3`), `--neg-ratio` hard negative sampling (from nonlesion videos and unannotated frames $\ge 15$ frames from lesions), and `--fold N` CV support.
+  - Implemented `CADICADataset` ([`src/data/dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/dataset.py)) PyTorch Dataset returning `(image tensor, boxes, labels, patient_id, frame_id, metadata)` with custom `collate_fn`.
+  - Built angiography-safe Albumentations pipelines ([`src/data/augment.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/augment.py)) with CLAHE, brightness/contrast, gamma, noise/blur, rotation $\pm 10^\circ$, scale 0.9–1.1; strictly **NO vertical flip**, **NO color jitter**, **NO lesion-slicing crops**.
+  - Generated visual check figure ([`reports/figures/augmentation_check.png`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/figures/augmentation_check.png)) and computed dataset normalization statistics ([`data_index/norm_stats.json`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/norm_stats.json)) via [`scripts/visualize_pipeline.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/visualize_pipeline.py).
+  - Added unit test suites [`tests/test_augment.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_augment.py), [`tests/test_dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_dataset.py), and [`tests/test_yolo_export.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_yolo_export.py) (84 total project tests passing clean).
 - **2026-10-01**: **Phase 2.1 Complete - Patient-Wise Splits & Stratified Cross-Validation**: Implemented `PatientSplitter` ([`src/data/splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/splits.py)) and CLI runner ([`scripts/make_splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/make_splits.py)). Generated `data_index/splits/split_v1.csv` (30 train, 6 val, 6 test) and `data_index/splits/folds_5.csv` with zero patient leakage, guaranteed per-class representation in val/test, rare-class stratification (`p100` and `p99`), 3 class schemes (`7class`, `binary`, `severity3`), and summary report ([`data_index/splits/splits_report.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/splits/splits_report.md)). 16 unit tests added in `tests/test_splits.py` (69 total project tests passing clean). Fixed 1-frame discrepancy in validator (31,500 total frames confirmed).
 - **2026-09-30**: **Phase 1 Complete (Release v0.1.0)** - Finalized dataset ingestion, integrity verification, indexing manifests, clinical metadata cleaning, exploratory data analysis, and automated execution scripts (`run_phase1.bat`, `run_phase1.sh`, `Makefile`).
 - **2026-09-30**: Phase 1.5 - Exploratory Data Analysis completed ([`src/data/eda.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/eda.py), [`scripts/run_eda.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/run_eda.py)). 8 analytical figures generated in [`reports/figures/`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/figures) and summary report [`reports/eda_summary.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/eda_summary.md).
