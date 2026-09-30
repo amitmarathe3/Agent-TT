@@ -18,3 +18,47 @@ logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   log_file: "outputs/logs/run.log"
+
+class_schemes:
+  default: "7class"
+  schemes:
+    7class:
+      p0_20: 0
+      p20_50: 1
+      p50_70: 2
+      p70_90: 3
+      p90_98: 4
+      p99: 5
+      p100: 6
+    binary:
+      nonlesion: 0
+      p0_20: 1
+      p20_50: 1
+      p50_70: 1
+      p70_90: 1
+      p90_98: 1
+      p99: 1
+      p100: 1
+    severity3:
+      # mild: p0_20, p20_50
+      p0_20: 0
+      p20_50: 0
+      # moderate: p50_70
+      p50_70: 1
+      # severe: p70_90, p90_98, p99, p100
+      p70_90: 2
+      p90_98: 2
+      p99: 2
+      p100: 2
+
+splits:
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  n_folds: 5
+  output_dir: "data_index/splits"
+  split_file: "split_v1.csv"
+  folds_file: "folds_5.csv"
+  report_file: "splits_report.md"
+  max_search_iter: 10000
+

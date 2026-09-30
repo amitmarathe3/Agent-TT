@@ -1,14 +1,14 @@
 ==================================================
         AGENT-TT DATASET VALIDATION REPORT        
 ==================================================
-Overall Status: PASS
+Overall Status: WARN
 --------------------------------------------------
 Dataset Statistics:
   - Total Patients Detected:  42
   - Total Video Sequences:     668
-  - Total Image Frames:        31499
+  - Total Image Frames:        31500
   - Total Groundtruth Labels:  3996
 --------------------------------------------------
-Inconsistencies & Issues (0 item(s)):
-  [NONE] All dataset checks passed cleanly.
+Inconsistencies & Issues (1 item(s)):
+  - [WARN] Misplaced/anomalous frame filename 'p30_v2_00021' found in p32/v10/input/
 ==================================================

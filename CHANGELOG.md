@@ -2,6 +2,35 @@
 
 All notable changes to the Agent-TT (CADICA-Agent) project will be documented in this file.
 
+## [0.2.0] - 2026-10-01 - Phase 2.1 Complete: Patient-Wise Splits & Cross-Validation
+
+### Added
+- Patient-wise dataset splitting module [`src/data/splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/splits.py) featuring `PatientSplitter`:
+  - Strictly patient-level partitioning with 0 patient overlap across train, validation, and test splits (no patient data leakage).
+  - Stratified randomized search algorithm optimizing class distribution and bounding box balance across splits.
+  - Hard constraint enforcement: fails if any of the 7 stenosis classes has 0 bounding boxes in validation or test splits.
+  - Rare-class balanced allocation: ensures rare class `p100` (present in exactly 3 patients: `p11`, `p23`, `p25`) has exactly one patient in each split (train, val, test), and `p99` (8 patients) is evenly distributed.
+  - 5-fold patient-wise cross-validation generator allocating the 42 patients into 5 stratified test folds (8, 8, 8, 9, 9 patients) with zero patient overlap.
+  - Configurable class severity schemes (`7class`, `binary`, `severity3`) with helper method `map_category()`.
+  - Comprehensive Markdown summary report generator ([`data_index/splits/splits_report.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/splits/splits_report.md)) detailing per-split patients, frames, boxes, and class breakdown percentages.
+  - High-performance NumPy matrix vectorization achieving sub-second search iterations across 10,000 permutations.
+- Command-line interface script [`scripts/make_splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/make_splits.py) with argparse options for `--config`, `--index-dir`, `--output-dir`, `--seed`, `--train-ratio`, `--val-ratio`, `--test-ratio`, `--n-folds`, and `--max-iter`.
+- Make target `splits` added to [`Makefile`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/Makefile).
+- Generated split manifests in [`data_index/splits/`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index):
+  - `split_v1.csv`: 42 patient rows (30 train, 6 val, 6 test) with 4,365 train boxes (70.8%), 757 val boxes (12.3%), and 1,039 test boxes (16.9%).
+  - `folds_5.csv`: 42 patient rows mapped to folds 0–4 (8, 8, 8, 9, 9 patients) with balanced box counts (1,160 to 1,341 boxes per fold).
+  - `splits_report.md`: Markdown report validating zero patient overlap and class distributions.
+- Configuration additions in [`configs/config.yaml`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/configs/config.yaml):
+  - `class_schemes`: `7class` (original 7 categories), `binary` (lesion vs nonlesion), `severity3` (mild, moderate, severe).
+  - `splits`: `train_ratio: 0.70`, `val_ratio: 0.15`, `test_ratio: 0.15`, `n_folds: 5`, file paths, and `max_search_iter: 10000`.
+- Comprehensive test suite in [`tests/test_splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_splits.py) with 16 tests covering zero patient overlap, class coverage, file outputs, natural patient sorting, and class scheme mappings (69 total project tests passing clean).
+
+### Fixed
+- Resolved 1-frame discrepancy between dataset validator (31,499 frames) and EDA (31,500 frames) in [`src/data/validator.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/validator.py):
+  - Discovered that an anomalous extra frame `p30_v2_00021.png` was present in `selectedVideos/p32/v10/input/` alongside the legitimate frame in `selectedVideos/p30/v2/input/`.
+  - The previous zip validator deduplicated filename stems in a `set()`, dropping 1 duplicate stem.
+  - Updated validator to track total frame file count and flag misplaced frame names with an informative warning, aligning validator and EDA at exactly 31,500 frames.
+
 ## [0.1.0] - 2026-09-30 - Phase 1 Complete
 
 ### Milestone Summary

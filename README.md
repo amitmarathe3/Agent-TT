@@ -46,7 +46,8 @@ CADICA-Agent/
 │   │   ├── validator.py       # Dataset integrity & consistency validator
 │   │   ├── indexer.py         # Groundtruth parser & index table builder
 │   │   ├── metadata.py        # Clinical metadata inspector & cleaner
-│   │   └── eda.py             # Exploratory Data Analysis & figure generator
+│   │   ├── eda.py             # Exploratory Data Analysis & figure generator
+│   │   └── splits.py          # Stratified patient-wise splitting & K-fold CV
 │   ├── models/
 │   │   └── __init__.py        # Lesion detection model definitions
 │   ├── evaluation/
@@ -60,7 +61,8 @@ CADICA-Agent/
 │   ├── validate_dataset.py    # Dataset integrity verification CLI
 │   ├── build_index.py         # Manifest and index generation CLI
 │   ├── inspect_metadata.py    # Clinical metadata audit & cleaning CLI
-│   └── run_eda.py             # Exploratory Data Analysis runner CLI
+│   ├── run_eda.py             # Exploratory Data Analysis runner CLI
+│   └── make_splits.py         # Patient-wise split generator CLI
 ├── tests/
 │   ├── __init__.py
 │   ├── test_config.py         # Tests for config loader, logger, and seed
@@ -68,7 +70,8 @@ CADICA-Agent/
 │   ├── test_dataset_validator.py # Tests for dataset validator
 │   ├── test_indexer.py        # Tests for index builder & groundtruth parser
 │   ├── test_metadata.py       # Tests for metadata inspection & patient alignment
-│   └── test_eda.py            # Tests for EDA plotting & report generation
+│   ├── test_eda.py            # Tests for EDA plotting & report generation
+│   └── test_splits.py         # Tests for patient-wise splits & zero leakage
 ├── notebooks/                 # Exploratory data analysis notebooks
 ├── reports/
 │   ├── figures/               # Generated figures (distributions, heatmaps, samples)
@@ -77,6 +80,7 @@ CADICA-Agent/
 │   └── eda_summary.md         # Comprehensive EDA findings & metrics report
 ├── outputs/                   # Checkpoints, predictions, and logs (gitignored)
 └── data_index/                # Metadata index files and manifests (gitignored)
+    └── splits/                # Patient-wise train/val/test & 5-fold CV manifests
 ```
 
 ---
@@ -226,7 +230,27 @@ python scripts/run_eda.py
   - [`reports/figures/sample_annotations.png`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/figures/sample_annotations.png)
   - [`reports/figures/metadata_correlations.png`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/figures/metadata_correlations.png)
 
-#### Step 5: Run Verification Test Suite
+#### Step 5: Generate Patient-Wise Splits & 5-Fold Cross-Validation (Phase 2.1)
+Partitions all 42 patients into strictly separated train/val/test splits (70/15/15) and 5-fold cross-validation folds using stratified random search that balances per-class bounding box representation (guaranteeing > 0 boxes for all 7 classes in val and test, including rare classes `p100` and `p99`):
+
+```bash
+python scripts/make_splits.py
+# Or: make splits
+```
+
+- **Expected Console Output**:
+  - `Searching for patient-wise split: 30 train, 6 val, 6 test (Total: 42 patients, seed: 42)`
+  - `Optimal train/val/test split found. All classes present in val and test.`
+  - `Saved train/val/test split to data_index/splits/split_v1.csv`
+  - `Optimal 5-fold cross-validation split created.`
+  - `Saved 5-fold cross-validation split to data_index/splits/folds_5.csv`
+  - `Splits report saved to data_index/splits/splits_report.md`
+- **Expected Artifacts Generated**:
+  - [`data_index/splits/split_v1.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/splits/split_v1.csv) — Patient-level split assignment (30 train, 6 val, 6 test)
+  - [`data_index/splits/folds_5.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/splits/folds_5.csv) — 5-Fold patient assignments (8, 8, 8, 9, 9 patients)
+  - [`data_index/splits/splits_report.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/splits/splits_report.md) — Comprehensive split balance and leakage verification report
+
+#### Step 6: Run Verification Test Suite
 Executes the comprehensive automated pytest test suite:
 
 ```bash
@@ -234,7 +258,7 @@ pytest -v
 # Or: make test
 ```
 
-- **Expected Console Output**: `53 passed in ~14s`
+- **Expected Console Output**: `69 passed in ~40s`
 
 ---
 
@@ -248,6 +272,7 @@ from src.data.validator import DatasetValidator
 from src.data.indexer import DatasetIndexer
 from src.data.metadata import MetadataInspector
 from src.data.eda import DatasetEDA
+from src.data.splits import PatientSplitter
 
 # 1. Reproducibility & logging
 set_seed(42)
@@ -267,6 +292,10 @@ meta_clean = inspector.clean_and_save()
 
 eda = DatasetEDA(config_path="configs/config.yaml")
 eda.run_all()
+
+# 4. Patient-wise splitting and K-fold CV
+splitter = PatientSplitter(config_path="configs/config.yaml")
+split_path, folds_path, report_path = splitter.run_all()
 ```
 
 ---
@@ -324,8 +353,10 @@ eda.run_all()
 ## 7. Roadmap (Phases 1-5)
 - **Phase 1: Project Setup & Dataset Indexing** ✅ *(Complete)*
   - Scaffold creation, config loader, logging, dynamic dataset scanner, validator, metadata parser, frame indexing, and EDA.
-- **Phase 2: Data Preprocessing & Augmentation**
-  - ICA image normalization, CLAHE enhancement, vessel filtering, bounding box scaling, patient-aware k-fold cross-validation splitters.
+- **Phase 2: Data Preprocessing & Augmentation** 🔄 *(In Progress)*
+  - **Phase 2.1: Patient-Wise Splits & Stratified Cross-Validation** ✅ *(Complete)*: Patient-level 70/15/15 train/val/test splits (`split_v1.csv`), 5-fold cross-validation (`folds_5.csv`), zero leakage verification, and 3 configurable class schemes (`7class`, `binary`, `severity3`).
+  - **Phase 2.2: Image Preprocessing & Normalization**: ICA pixel intensity calibration, CLAHE enhancement, vessel filtering.
+  - **Phase 2.3: Data Augmentation**: Medical imaging geometric & photometric transforms with bounding-box preservation.
 - **Phase 3: Model Architecture & Training**
   - Baseline object detection backbone (YOLOv8 / Faster R-CNN / DETR adapted for ICA), loss functions, model trainer pipeline.
 - **Phase 4: Evaluation & Performance Analysis**
@@ -355,7 +386,8 @@ For full version history and updates, view the [`CHANGELOG.md`](file:///c:/Users
 ---
 
 ## 10. Update Log
-- **2026-09-30**: **Phase 1 Complete (Release v0.1.0)** - Finalized dataset ingestion, integrity verification, indexing manifests, clinical metadata cleaning, exploratory data analysis, and automated execution scripts (`run_phase1.bat`, `run_phase1.sh`, `Makefile`). 53 unit tests passing clean.
+- **2026-10-01**: **Phase 2.1 Complete - Patient-Wise Splits & Stratified Cross-Validation**: Implemented `PatientSplitter` ([`src/data/splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/splits.py)) and CLI runner ([`scripts/make_splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/make_splits.py)). Generated `data_index/splits/split_v1.csv` (30 train, 6 val, 6 test) and `data_index/splits/folds_5.csv` with zero patient leakage, guaranteed per-class representation in val/test, rare-class stratification (`p100` and `p99`), 3 class schemes (`7class`, `binary`, `severity3`), and summary report ([`data_index/splits/splits_report.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/splits/splits_report.md)). 16 unit tests added in `tests/test_splits.py` (69 total project tests passing clean). Fixed 1-frame discrepancy in validator (31,500 total frames confirmed).
+- **2026-09-30**: **Phase 1 Complete (Release v0.1.0)** - Finalized dataset ingestion, integrity verification, indexing manifests, clinical metadata cleaning, exploratory data analysis, and automated execution scripts (`run_phase1.bat`, `run_phase1.sh`, `Makefile`).
 - **2026-09-30**: Phase 1.5 - Exploratory Data Analysis completed ([`src/data/eda.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/eda.py), [`scripts/run_eda.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/run_eda.py)). 8 analytical figures generated in [`reports/figures/`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/figures) and summary report [`reports/eda_summary.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/eda_summary.md).
 - **2026-09-30**: Phase 1.4 - Clinical metadata inspector and cleaner implemented ([`src/data/metadata.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/metadata.py), [`scripts/inspect_metadata.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/inspect_metadata.py)).
 - **2026-09-30**: Phase 1.3 - Dataset Indexer implemented ([`src/data/indexer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/indexer.py), [`scripts/build_index.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/build_index.py)). Discovered groundtruth bounding-box formats, built 4 index tables and `classes.json`.

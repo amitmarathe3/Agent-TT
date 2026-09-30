@@ -4,6 +4,7 @@ from src.data.dataset_scanner import DatasetScanner
 from src.data.eda import DatasetEDA
 from src.data.indexer import DatasetIndexer
 from src.data.metadata import MetadataInspector
+from src.data.splits import PatientSplitter
 from src.data.validator import DatasetValidator
 
 __all__ = [
@@ -12,5 +13,6 @@ __all__ = [
     "DatasetIndexer",
     "MetadataInspector",
     "DatasetEDA",
+    "PatientSplitter",
 ]
 

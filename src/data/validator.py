@@ -220,26 +220,38 @@ class DatasetValidator:
             gt_files = set()
             selected_frames_entries = set()
 
+            total_frames = 0
+            total_gt = 0
+
             for name in namelist:
                 parts = Path(name).parts
                 if not parts:
                     continue
 
                 # Locate patient (pX) and video (vY) in path parts
+                curr_p = None
+                curr_v = None
                 for i, p in enumerate(parts):
                     if p.startswith("p") and p[1:].isdigit():
                         patients_set.add(p)
+                        curr_p = p
                         if i + 1 < len(parts) and parts[i+1].startswith("v") and parts[i+1][1:].isdigit():
+                            curr_v = parts[i+1]
                             video_key = f"{p}_{parts[i+1]}"
                             videos_set.add(video_key)
 
                 if name.endswith(self.image_extension) and "/input/" in name:
-                    input_frames.add(Path(name).stem)
+                    total_frames += 1
+                    stem = Path(name).stem
+                    input_frames.add(stem)
+                    # Check for misplaced frame filenames
+                    if curr_p and curr_v and not stem.startswith(f"{curr_p}_{curr_v}_"):
+                        warnings.append(
+                            f"Misplaced/anomalous frame filename '{stem}' found in {curr_p}/{curr_v}/input/"
+                        )
                 elif name.endswith(".txt") and "/groundtruth/" in name:
+                    total_gt += 1
                     gt_files.add(Path(name).stem)
-
-            total_frames = len(input_frames)
-            total_gt = len(gt_files)
 
             # Check groundtruth matching frame
             for gt_stem in gt_files:

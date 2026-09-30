@@ -2,7 +2,7 @@
 # CADICA Agent-TT Makefile
 # ==============================================================================
 
-.PHONY: all help test validate index metadata eda phase1 clean
+.PHONY: all help test validate index metadata eda phase1 splits clean
 
 # Default target
 all: phase1
@@ -14,6 +14,7 @@ help:
 	@echo "  make index     - Step 2: Build frames, annotations, videos, and patients indices"
 	@echo "  make metadata  - Step 3: Inspect and clean clinical metadata"
 	@echo "  make eda       - Step 4: Run exploratory data analysis and generate charts"
+	@echo "  make splits    - Phase 2.1: Generate patient-wise train/val/test and 5-fold CV splits"
 	@echo "  make test      - Run full pytest test suite"
 	@echo "  make clean     - Clean generated outputs, index files, and caches"
 
@@ -31,6 +32,9 @@ metadata:
 
 eda:
 	python scripts/run_eda.py
+
+splits:
+	python scripts/make_splits.py
 
 phase1: validate index metadata eda
 	@echo "Phase 1 pipeline completed successfully!"
