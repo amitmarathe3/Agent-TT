@@ -7,8 +7,8 @@ __pycache__/
 # Dataset & Large Files (never commit dataset into repo)
 *.zip
 CADICA.zip
-data/
-data_extracted/
+/data/
+/data_extracted/
 data_index/*.csv
 data_index/*.json
 !data_index/.gitkeep

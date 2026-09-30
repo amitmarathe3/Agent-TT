@@ -2,6 +2,63 @@
 
 All notable changes to the Agent-TT (CADICA-Agent) project will be documented in this file.
 
+## [0.1.0] - 2026-09-30 - Phase 1 Complete
+
+### Milestone Summary
+Phase 1 (Data Ingestion, Verification, Indexing, and Exploratory Data Analysis) is officially complete. The CADICA angiography dataset (42 patients, 668 videos, 31,500 frames, 6,161 bounding box annotations across 7 stenosis severity classes) has been completely validated, indexed, cleaned, and explored with 53/53 tests passing and reproducible one-command pipeline automation.
+
+### Deliverables Completed
+- **Pipeline Automation Scripts**:
+  - [`run_phase1.bat`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/run_phase1.bat) (Windows batch runner)
+  - [`run_phase1.sh`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/run_phase1.sh) (Linux/macOS Bash runner)
+  - [`Makefile`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/Makefile) (Make targets: `phase1`, `validate`, `index`, `metadata`, `eda`, `test`, `clean`)
+- **Dataset Structural Validation**:
+  - [`src/data/validator.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/validator.py) & [`scripts/validate_dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/validate_dataset.py)
+  - PASS validation report at [`reports/dataset_validation.txt`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/dataset_validation.txt) (verified 42 patients, 668 video folders, 31,500 frames, 3,996 annotations).
+- **Dataset Indexing & Manifests**:
+  - [`src/data/indexer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/indexer.py) & [`scripts/build_index.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/build_index.py)
+  - Generated index tables in `data_index/`: `frames_index.csv` (31,500 rows), `annotations.csv` (6,161 rows), `videos_index.csv` (668 rows), `patients_index.csv` (42 rows), `classes.json` (7 classes).
+- **Clinical Metadata Audit & Cleaning**:
+  - [`src/data/metadata.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/metadata.py) & [`scripts/inspect_metadata.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/inspect_metadata.py)
+  - Standardized cleaned metadata [`data_index/metadata_clean.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/metadata_clean.csv) and audit report [`reports/metadata_summary.txt`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/metadata_summary.txt) verifying 100% patient alignment.
+- **Exploratory Data Analysis (EDA)**:
+  - [`src/data/eda.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/eda.py) & [`scripts/run_eda.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/run_eda.py)
+  - 8 analytical figures in [`reports/figures/`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/figures) and summary report [`reports/eda_summary.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/eda_summary.md).
+- **Test Suite**:
+  - 53 passing tests across `tests/test_config.py`, `tests/test_dataset_scanner.py`, `tests/test_dataset_validator.py`, `tests/test_indexer.py`, `tests/test_metadata.py`, and `tests/test_eda.py`.
+- **Documentation**:
+  - Rewritten Quick Start in [`README.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/README.md) with step-by-step commands, expected outputs, and Phase 1 Results statistics table.
+
+
+### Added
+- Exploratory Data Analysis (EDA) module [`src/data/eda.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/eda.py) featuring `DatasetEDA`:
+  - Per-patient analysis: bar charts of frames, videos, and bounding boxes per patient (`per_patient_stats.png`).
+  - Lesion category class distribution: bar chart with count and percentage annotations, plus automatic severity ordering and class-imbalance detection warning (30.9x ratio, exceeding 5.0x threshold; `class_distribution.png`).
+  - Bounding box geometry analysis: histograms for box width, height, area, aspect ratio, a 2D spatial heatmap of lesion centres across normalized coordinates, and box area distributions by category (`bbox_statistics.png`).
+  - Image resolution verification: bar chart validating 100% 512×512 resolution uniformity (`resolution_distribution.png`).
+  - Split and keyframe balance: pie and bar charts for lesion vs non-lesion videos and frames, selected vs nonselected frames, and annotated vs unannotated frames (`lesion_selected_splits.png`).
+  - Boxes-per-frame frequency histogram (`boxes_per_frame.png`) revealing a mean of 1.54 boxes per annotated frame and up to 6 boxes on a single frame.
+  - Sample annotation visualizer: grid of 12 randomly sampled angiographic frames with ground-truth bounding boxes and severity labels drawn directly from image data (`sample_annotations.png`).
+  - Clinical metadata correlation: Pearson correlation heatmap linking numeric patient clinical measurements (age, BMI, diabetes, etc.) to per-patient lesion counts (`metadata_correlations.png`).
+  - Automated Markdown summary report generation embedding all figures and detailing key findings (class imbalance, tiny boxes < 400 px², annotation sparsity, patients with 0 lesions) at [`reports/eda_summary.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/eda_summary.md).
+- Command-line interface runner script [`scripts/run_eda.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/run_eda.py) with argparse options and clean console summary.
+- Comprehensive unit and integration test suite in [`tests/test_eda.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_eda.py) containing 13 tests using self-contained synthetic fixtures (53 total project tests passing clean).
+- Exported `DatasetEDA` in [`src/data/__init__.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/__init__.py).
+- Updated [`README.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/README.md) with EDA CLI documentation, options, and figure output tables.
+
+## [0.6.0] - 2026-09-30
+
+### Added
+- Clinical metadata inspection and normalization module [`src/data/metadata.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/metadata.py) featuring `MetadataInspector`:
+  - Automated patient ID column detection without hardcoded column names (hybrid heuristic scoring column name tokens, value uniqueness ratio, integer/regex patterns, and penalizing clinical flags).
+  - Patient ID normalization to standard `'pX'` folder format (e.g. `1` -> `'p1'`).
+  - Comprehensive clinical summary report generator saving to [`reports/metadata_summary.txt`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/metadata_summary.txt) covering dataset shape, column schema, dtypes, missing values per column, categorical unique value counts and distributions, and `describe()` for numeric clinical columns.
+  - Cross-referencing against image folders (`selectedVideos` / `nonselectedVideos`) identifying missing patients in both directions (verified 42/42 patients aligned with zero discrepancies).
+  - Cleaned metadata CSV exporter saving to [`data_index/metadata_clean.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/metadata_clean.csv) with standardized `patient_id` as the primary key.
+- Command-line interface script [`scripts/inspect_metadata.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/inspect_metadata.py) with options for configuration, dataset root, metadata path, and custom outputs.
+- Comprehensive unit and integration test suite in [`tests/test_metadata.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_metadata.py) with 14 tests covering patient normalization, auto-detection, cleaning, discrepancy detection, summary generation, synthetic Excel testing, and real CADICA archive testing (40 total project tests passing clean).
+- Updated [`README.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/README.md) with Clinical Metadata Inspection CLI usage guide and cleaned metadata schema documentation.
+
 ## [0.5.0] - 2026-09-30
 
 ### Added

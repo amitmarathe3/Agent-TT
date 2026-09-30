@@ -1,0 +1,168 @@
+================================================================================
+CADICA CLINICAL METADATA AUDIT & SUMMARY REPORT
+================================================================================
+Source Location       : CADICA.zip :: CADICA/metadata.xlsx
+Raw Metadata Shape    : 42 rows x 20 columns
+Clean Metadata Shape  : 42 rows x 20 columns
+Detected Patient Col  : 'Patient ID' -> normalized to 'patient_id' (pX)
+
+--------------------------------------------------------------------------------
+1. COLUMN SCHEMA & DATA TYPES
+--------------------------------------------------------------------------------
+Idx  Column Name                                        Dtype        Missing    Missing % 
+---  ------------------------------------------------   ----------   --------   --------  
+1    Patient ID                                         int64        0            0.00%
+2    Age (years)                                        int64        0            0.00%
+3    Sex                                                object       0            0.00%
+4    Height (m)                                         float64      22          52.38%
+5    Weight (kg)                                        float64      2            4.76%
+6    BMI                                                float64      22          52.38%
+7    Diabetes mellitus                                  int64        0            0.00%
+8    Evolution diabetes (years)                         float64      1            2.38%
+9    Dyslipidemia                                       int64        0            0.00%
+10   Smoker                                             int64        0            0.00%
+11   High blood pressure                                int64        0            0.00%
+12   Another comorbidity                                object       0            0.00%
+13   Kidney failure                                     int64        0            0.00%
+14   Heart failure                                      int64        0            0.00%
+15   Atrial fibrillation                                int64        0            0.00%
+16   Left ventricular ejection fraction                 object       1            2.38%
+17   Clinical indication for angiogrphy                 object       1            2.38%
+18   Number of vessels affected                         int64        0            0.00%
+19   Maximum degree of the coronary artery involvement  object       0            0.00%
+20   Later medical events                               object       0            0.00%
+
+Total Dataset Cells   : 840
+Total Missing Values  : 49 (5.83% of all cells)
+
+--------------------------------------------------------------------------------
+2. MISSING VALUES DETAIL PER COLUMN
+--------------------------------------------------------------------------------
+Columns with missing values (6 total):
+  - Height (m)                                       :  22 missing ( 52.38%)
+  - BMI                                              :  22 missing ( 52.38%)
+  - Weight (kg)                                      :   2 missing (  4.76%)
+  - Evolution diabetes (years)                       :   1 missing (  2.38%)
+  - Left ventricular ejection fraction               :   1 missing (  2.38%)
+  - Clinical indication for angiogrphy               :   1 missing (  2.38%)
+
+--------------------------------------------------------------------------------
+3. CATEGORICAL COLUMNS: UNIQUE VALUES & VALUE COUNTS
+--------------------------------------------------------------------------------
+Column: 'Sex' (Type: object, Unique values: 2)
+    - M                                             :  22 ( 52.4%)
+    - F                                             :  20 ( 47.6%)
+
+Column: 'Diabetes mellitus' (Type: int64, Unique values: 2)
+    - 0                                             :  25 ( 59.5%)
+    - 1                                             :  17 ( 40.5%)
+
+Column: 'Dyslipidemia' (Type: int64, Unique values: 2)
+    - 0                                             :  25 ( 59.5%)
+    - 1                                             :  17 ( 40.5%)
+
+Column: 'Smoker' (Type: int64, Unique values: 2)
+    - 0                                             :  23 ( 54.8%)
+    - 1                                             :  19 ( 45.2%)
+
+Column: 'High blood pressure' (Type: int64, Unique values: 2)
+    - 1                                             :  26 ( 61.9%)
+    - 0                                             :  16 ( 38.1%)
+
+Column: 'Another comorbidity' (Type: object, Unique values: 19)
+    - 0                                             :  22 ( 52.4%)
+    - COPD                                          :   3 (  7.1%)
+    - osteoporosis, cancer                          :   1 (  2.4%)
+    - breast cancer, lung cancer                    :   1 (  2.4%)
+    - hyperuricemia                                 :   1 (  2.4%)
+    - glaucoma                                      :   1 (  2.4%)
+    - moderate OSAS                                 :   1 (  2.4%)
+    - pulmonary embolism                            :   1 (  2.4%)
+    - alcoholism, HCV                               :   1 (  2.4%)
+    - asthma                                        :   1 (  2.4%)
+    - restrictive lung disease                      :   1 (  2.4%)
+    - hepatic disease                               :   1 (  2.4%)
+    - hyperthyroidism , acute myocardial infarction :   1 (  2.4%)
+    - alzheimer                                     :   1 (  2.4%)
+    - bronquial asthma                              :   1 (  2.4%)
+    - pulmonary embolism, acute myocardial infarction :   1 (  2.4%)
+    - polycythemia                                  :   1 (  2.4%)
+    - Crohn's disease                               :   1 (  2.4%)
+    - COPD, asthma, alcoholism, obesity             :   1 (  2.4%)
+
+Column: 'Kidney failure' (Type: int64, Unique values: 2)
+    - 0                                             :  36 ( 85.7%)
+    - 1                                             :   6 ( 14.3%)
+
+Column: 'Heart failure' (Type: int64, Unique values: 2)
+    - 0                                             :  36 ( 85.7%)
+    - 1                                             :   6 ( 14.3%)
+
+Column: 'Atrial fibrillation' (Type: int64, Unique values: 2)
+    - 0                                             :  40 ( 95.2%)
+    - 1                                             :   2 (  4.8%)
+
+Column: 'Left ventricular ejection fraction' (Type: object, Unique values: 6)
+    - >55%                                          :  26 ( 61.9%)
+    - <35%                                          :   8 ( 19.0%)
+    - 45-55%                                        :   4 (  9.5%)
+    - > 55%                                         :   2 (  4.8%)
+    - <NA / Missing>                                :   1 (  2.4%)
+    - <40%                                          :   1 (  2.4%)
+
+Column: 'Clinical indication for angiogrphy' (Type: object, Unique values: 7)
+    - Non-ST segment elevation acute coronary syndrome :  26 ( 61.9%)
+    - ST-segment Elevation Acute Coronary Syndrome  :  10 ( 23.8%)
+    - stable angina                                 :   2 (  4.8%)
+    - <NA / Missing>                                :   1 (  2.4%)
+    - ST segment Elevation Acute Coronary Syndrome  :   1 (  2.4%)
+    - Non-ST-segment Elevation Acute Coronary Syndrome :   1 (  2.4%)
+    - ST segment elevation acute coronary syndrome  :   1 (  2.4%)
+
+Column: 'Maximum degree of the coronary artery involvement' (Type: object, Unique values: 5)
+    - >70%                                          :  15 ( 35.7%)
+    - > 70%                                         :  13 ( 31.0%)
+    - 20-50%                                        :   8 ( 19.0%)
+    - <20%                                          :   5 ( 11.9%)
+    - < 20%                                         :   1 (  2.4%)
+
+Column: 'Later medical events' (Type: object, Unique values: 8)
+    - 0                                             :  30 ( 71.4%)
+    - non-cardiac death                             :   5 ( 11.9%)
+    - cardiac death                                 :   2 (  4.8%)
+    - myocardial infarction                         :   1 (  2.4%)
+    - covid pneumonia                               :   1 (  2.4%)
+    - community-acquired pneumonia                  :   1 (  2.4%)
+    - acute descompensated heart failure            :   1 (  2.4%)
+    - acute descompensated heart failure, de novo atrial fibrillation :   1 (  2.4%)
+
+--------------------------------------------------------------------------------
+4. NUMERIC COLUMNS SUMMARY: describe()
+--------------------------------------------------------------------------------
+       Age (years)  Height (m)  Weight (kg)        BMI  Diabetes mellitus  Evolution diabetes (years)  Dyslipidemia     Smoker  High blood pressure  Kidney failure  Heart failure  Atrial fibrillation  Number of vessels affected
+count    42.000000   20.000000    40.000000  20.000000          42.000000                   41.000000     42.000000  42.000000            42.000000       42.000000      42.000000            42.000000                   42.000000
+mean     68.785714    1.636500    78.167500  32.187288           0.404762                    3.146341      0.404762   0.452381             0.619048        0.142857       0.142857             0.047619                    1.142857
+std      12.667484    0.079821    17.687434   7.423334           0.496796                    5.294152      0.496796   0.503761             0.491507        0.354169       0.354169             0.215540                    0.925820
+min      42.000000    1.520000    55.000000  24.977043           0.000000                    0.000000      0.000000   0.000000             0.000000        0.000000       0.000000             0.000000                    0.000000
+25%      59.250000    1.585000    67.000000  27.694673           0.000000                    0.000000      0.000000   0.000000             0.000000        0.000000       0.000000             0.000000                    1.000000
+50%      71.500000    1.645000    74.000000  30.294616           0.000000                    0.000000      0.000000   0.000000             1.000000        0.000000       0.000000             0.000000                    1.000000
+75%      78.000000    1.660000    85.000000  34.711461           1.000000                    6.000000      1.000000   1.000000             1.000000        0.000000       0.000000             0.000000                    1.750000
+max      89.000000    1.830000   136.000000  56.923596           1.000000                   23.000000      1.000000   1.000000             1.000000        1.000000       1.000000             1.000000                    3.000000
+
+--------------------------------------------------------------------------------
+5. PATIENT ALIGNMENT AUDIT (Metadata vs Image Folders)
+--------------------------------------------------------------------------------
+Patients in Metadata       : 42
+Patients in Image Folders  : 42
+Common Patients Aligned    : 42
+Alignment Status           : PERFECT_MATCH
+
+Patients in Metadata MISSING from Image Folders:
+  None (all metadata patients exist in image folders).
+
+Patients in Image Folders MISSING from Metadata:
+  None (all folder patients exist in clinical metadata).
+
+================================================================================
+END OF METADATA SUMMARY REPORT
+================================================================================
