@@ -2,65 +2,39 @@
 
 All notable changes to the Agent-TT (CADICA-Agent) project will be documented in this file.
 
-## [0.3.0] - 2026-10-01 - Phase 2.2 Complete: Data Pipeline, YOLO Export & Medical Augmentation
+## [0.2.0] - 2026-10-01 - Phase 2 Complete: Data Pipeline, Augmentation, Splits & Evaluation
+
+### Milestone Summary
+Phase 2 (Patient-Wise Splitting, Data Pipeline, Medical Data Augmentation, Model-Agnostic Evaluation Framework, and Baseline Sanity Checks) is officially complete. The CADICA angiography pipeline now provides patient-level stratified cross-validation with zero patient data leakage, hard negative sampling, angiography-safe medical augmentations, comprehensive multi-level detection/classification metrics, reproducible pipeline automation (`run_phase2.bat`, `run_phase2.sh`, `make phase2`), and 120/120 automated pytest tests passing clean with zero warnings.
 
 ### Added
-- **YOLO Dataset Exporter**:
-  - Implemented `YOLOExporter` in [`src/data/yolo_export.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/yolo_export.py) and CLI runner [`scripts/export_yolo.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/export_yolo.py).
-  - Builds standard Ultralytics YOLO structure in `outputs/yolo_dataset/` (`images/{train,val,test}/`, `labels/{train,val,test}/`, `data.yaml`).
-  - Strict image linkage: uses symlinks (or copy fallback) and reads directly from `CADICA.zip` or unpacked directories without checking raw images into version control.
-  - Hard negative frame sampling via `--neg-ratio` (default `0.25`), selecting clean lesion-free frames from nonlesion videos and unannotated frames in lesion videos that are $\ge 15$ frames away from annotated keyframes (written with empty `.txt` labels).
-  - Multi-class scheme support via `--scheme`: `7class` (all 7 stenosis tiers), `binary` (`normal`, `lesion`), and `severity3` (`mild`, `moderate`, `severe`).
-  - Cross-validation fold export via `--fold N` (0 to 4), mapping fold assignments into test, val, and train sets.
-  - Successfully exported full dataset: 4,994 images (3,996 positive frames + 998 sampled hard negatives) and 6,161 bounding boxes with zero patient leakage.
-- **PyTorch Dataset for Custom Models**:
-  - Implemented `CADICADataset` in [`src/data/dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/dataset.py).
-  - Dynamic image loading from zip archives or filesystem directories with RGB conversion and optional float32 normalization.
-  - Returns dictionary items: `image` (Tensor [3, H, W]), `boxes` (Tensor [N, 4]), `labels` (Tensor [N]), `patient_id` (str), `frame_id` (str), and optional clinical `metadata` features (normalized age, BMI, CAD risk flags).
-  - Custom `collate_fn` handles variable box counts per frame and collates batches for custom PyTorch architectures.
-- **Angiography-Safe Medical Data Augmentations**:
-  - Implemented `get_train_transforms` and `get_val_transforms` in [`src/data/augment.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/augment.py) using Albumentations.
-  - Tailored to invasive coronary angiography (ICA) physics and clinical morphology: CLAHE contrast enhancement, RandomBrightnessContrast, RandomGamma, GaussianBlur / GaussNoise, mild rotation ($\pm 10^\circ$), scaling (0.9–1.1), subtle translation, and optional horizontal flipping.
-  - **Clinical Safety Constraints**: Strictly NO vertical flip (preserves catheter top-down anatomical orientation), NO color/hue jitter (preserves grayscale X-ray absorption physics), and NO aggressive crops (prevents cutting off stenosis lesions).
-  - Added bbox post-transform safety bounding function `clip_yolo_boxes` preventing boundary overflow.
-- **Pipeline Visualizer & Normalization Statistics**:
-  - Implemented [`scripts/visualize_pipeline.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/visualize_pipeline.py).
-  - Generates 3×4 sample grid with bounding boxes drawn and labeled at [`reports/figures/augmentation_check.png`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/figures/augmentation_check.png).
-  - Computed exact per-channel mean and standard deviation across all 3,496 training frames, saved to [`data_index/norm_stats.json`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/norm_stats.json): `mean: [0.5066, 0.5066, 0.5066]`, `std: [0.1385, 0.1385, 0.1385]`.
+- **Phase 2.4 - Evaluation Sanity Check & Automation**:
+  - Implemented [`scripts/sanity_check.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/sanity_check.py) running dual baseline predictors on validation split:
+    - **Oracle Predictor**: Ground-truth boxes as predictions with confidence=1.0; verified perfect 1.0000 across Micro/Macro F1, mAP@0.5, mAP@0.5:0.95, and Frame Accuracy (fails loudly if any metric deviates from 1.0).
+    - **Random Predictor**: Stochastic boxes and scores; verified near-zero performance (Micro F1=0.0011, Macro F1=0.0007, mAP@0.5=0.0099).
+  - Created unified Phase 2 pipeline scripts:
+    - [`run_phase2.bat`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/run_phase2.bat) (Windows batch runner)
+    - [`run_phase2.sh`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/run_phase2.sh) (Linux/macOS Bash runner)
+    - Updated [`Makefile`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/Makefile) with `sanity-check` and `phase2` targets.
+- **Phase 2.3 - Model-Agnostic Evaluation Package (`src/evaluation/`)**:
+  - Module [`src/evaluation/matching.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/matching.py): Vectorized pairwise IoU and greedy score-ordered prediction-to-ground-truth matching (class-aware and class-agnostic).
+  - Module [`src/evaluation/metrics.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/metrics.py): Object detection metrics (TP, FP, FN, Precision, Recall, F1, mean IoU), 101-point COCO-style mAP@0.5 and mAP@0.5:0.95, confusion matrices with background class, frame-level AUROC/sensitivity/specificity, patient-level maximum score aggregation, validation macro F1 threshold optimization, and patient bootstrap 95% CIs (1,000 iterations).
+  - Module [`src/evaluation/report.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/report.py): JSON serialization (`metrics.json`), Markdown report generation (`metrics.md`), and high-resolution figures: confusion matrices, PR curves, F1 vs confidence curves, ROC and PR curves.
+  - CLI [`scripts/evaluate.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/evaluate.py): Model-agnostic evaluator accepting `--pred`, `--gt` or `--split`, `--scheme`, `--conf`, `--iou`, and `--bootstrap`.
+- **Phase 2.2 - Data Pipeline, YOLO Export & Medical Augmentation**:
+  - Exporter [`src/data/yolo_export.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/yolo_export.py) and CLI [`scripts/export_yolo.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/export_yolo.py): Standard Ultralytics YOLO dataset in `outputs/yolo_dataset/` with hard negatives at ratio 0.25 (4,994 total images: 3,996 positives + 998 negatives; 6,161 bounding boxes).
+  - PyTorch Dataset [`src/data/dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/dataset.py): `CADICADataset` returning images, boxes, labels, patient_id, frame_id, and clinical metadata with custom collate function.
+  - Augmentation pipeline [`src/data/augment.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/augment.py): Angiography-safe Albumentations transforms (CLAHE, brightness/contrast, gamma, noise/blur, rotation $\pm 10^\circ$; strictly NO vertical flip, NO color jitter, NO aggressive crops).
+  - Visual check grid [`reports/figures/augmentation_check.png`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/figures/augmentation_check.png) and normalization stats [`data_index/norm_stats.json`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/norm_stats.json).
+- **Phase 2.1 - Patient-Wise Splits & Stratified Cross-Validation**:
+  - Splitter [`src/data/splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/splits.py) & CLI [`scripts/make_splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/make_splits.py): Partitioned 42 patients into `split_v1.csv` (30 train, 6 val, 6 test) and `folds_5.csv` with zero patient leakage, guaranteed per-class representation, rare-class allocation (`p100` and `p99`), and summary report [`data_index/splits/splits_report.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/splits/splits_report.md).
 - **Test Suite**:
-  - Created [`tests/test_augment.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_augment.py) (5 tests), [`tests/test_dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_dataset.py) (5 tests), and [`tests/test_yolo_export.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_yolo_export.py) (5 tests).
-  - All 84 project unit tests passing clean (100% pass rate).
-- **Makefile Targets**:
-  - Added `export-yolo` and `visualize-pipeline` targets to [`Makefile`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/Makefile).
-
-## [0.2.0] - 2026-10-01 - Phase 2.1 Complete: Patient-Wise Splits & Cross-Validation
-
-### Added
-- Patient-wise dataset splitting module [`src/data/splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/splits.py) featuring `PatientSplitter`:
-  - Strictly patient-level partitioning with 0 patient overlap across train, validation, and test splits (no patient data leakage).
-  - Stratified randomized search algorithm optimizing class distribution and bounding box balance across splits.
-  - Hard constraint enforcement: fails if any of the 7 stenosis classes has 0 bounding boxes in validation or test splits.
-  - Rare-class balanced allocation: ensures rare class `p100` (present in exactly 3 patients: `p11`, `p23`, `p25`) has exactly one patient in each split (train, val, test), and `p99` (8 patients) is evenly distributed.
-  - 5-fold patient-wise cross-validation generator allocating the 42 patients into 5 stratified test folds (8, 8, 8, 9, 9 patients) with zero patient overlap.
-  - Configurable class severity schemes (`7class`, `binary`, `severity3`) with helper method `map_category()`.
-  - Comprehensive Markdown summary report generator ([`data_index/splits/splits_report.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index/splits/splits_report.md)) detailing per-split patients, frames, boxes, and class breakdown percentages.
-  - High-performance NumPy matrix vectorization achieving sub-second search iterations across 10,000 permutations.
-- Command-line interface script [`scripts/make_splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/make_splits.py) with argparse options for `--config`, `--index-dir`, `--output-dir`, `--seed`, `--train-ratio`, `--val-ratio`, `--test-ratio`, `--n-folds`, and `--max-iter`.
-- Make target `splits` added to [`Makefile`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/Makefile).
-- Generated split manifests in [`data_index/splits/`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/data_index):
-  - `split_v1.csv`: 42 patient rows (30 train, 6 val, 6 test) with 4,365 train boxes (70.8%), 757 val boxes (12.3%), and 1,039 test boxes (16.9%).
-  - `folds_5.csv`: 42 patient rows mapped to folds 0–4 (8, 8, 8, 9, 9 patients) with balanced box counts (1,160 to 1,341 boxes per fold).
-  - `splits_report.md`: Markdown report validating zero patient overlap and class distributions.
-- Configuration additions in [`configs/config.yaml`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/configs/config.yaml):
-  - `class_schemes`: `7class` (original 7 categories), `binary` (lesion vs nonlesion), `severity3` (mild, moderate, severe).
-  - `splits`: `train_ratio: 0.70`, `val_ratio: 0.15`, `test_ratio: 0.15`, `n_folds: 5`, file paths, and `max_search_iter: 10000`.
-- Comprehensive test suite in [`tests/test_splits.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_splits.py) with 16 tests covering zero patient overlap, class coverage, file outputs, natural patient sorting, and class scheme mappings (69 total project tests passing clean).
+  - 120 total automated pytest tests passing clean with zero warnings (100% pass rate).
 
 ### Fixed
-- Resolved 1-frame discrepancy between dataset validator (31,499 frames) and EDA (31,500 frames) in [`src/data/validator.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/validator.py):
-  - Discovered that an anomalous extra frame `p30_v2_00021.png` was present in `selectedVideos/p32/v10/input/` alongside the legitimate frame in `selectedVideos/p30/v2/input/`.
-  - The previous zip validator deduplicated filename stems in a `set()`, dropping 1 duplicate stem.
-  - Updated validator to track total frame file count and flag misplaced frame names with an informative warning, aligning validator and EDA at exactly 31,500 frames.
+- Resolved 1-frame discrepancy between dataset validator (31,499 frames) and EDA (31,500 frames) caused by misplaced frame duplicate stem `p30_v2_00021.png` in `selectedVideos/p32/v10/input/`. The validator was updated to count total frame files and flag misplaced frame names with an informative warning, aligning validator and EDA at exactly 31,500 frames.
+- Fixed JSON serialization of NumPy types and private plotting arrays in evaluation report generator.
+- Added ASCII-safe console status prefix `[OK]` replacing unicode character to prevent Windows CP1252 UnicodeEncodeError.
 
 ## [0.1.0] - 2026-09-30 - Phase 1 Complete
 

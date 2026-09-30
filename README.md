@@ -121,29 +121,39 @@ pip install -r requirements.txt
 
 ---
 
-## 5. Phase 1 Quick Start & Pipeline Usage
+## 5. Quick Start & Pipeline Execution
 
-The Phase 1 pipeline automates dataset validation, index generation, metadata inspection, and exploratory data analysis.
-
-### Option A: One-Command Execution
-
+### Phase 1 Quick Start (One-Command Execution)
 Run the complete Phase 1 pipeline in order (`validate_dataset` → `build_index` → `inspect_metadata` → `run_eda`):
 
 ```bash
-# Windows (Command Prompt or PowerShell)
+# Windows
 .\run_phase1.bat
 
 # Linux / macOS / Bash
-chmod +x run_phase1.sh
-./run_phase1.sh
+chmod +x run_phase1.sh && ./run_phase1.sh
 
 # Using Make
 make phase1
 ```
 
+### Phase 2 Quick Start (One-Command Execution)
+Run the complete Phase 2 pipeline in order (`make_splits` → `export_yolo` → `visualize_pipeline` → `sanity_check`):
+
+```bash
+# Windows
+.\run_phase2.bat
+
+# Linux / macOS / Bash
+chmod +x run_phase2.sh && ./run_phase2.sh
+
+# Using Make
+make phase2
+```
+
 ---
 
-### Option B: Step-by-Step Execution
+### Step-by-Step Execution
 
 #### Step 1: Validate Dataset Integrity
 Verifies directory structure, presence of `metadata.xlsx`, patient folders (`p1`–`p42`), video subfolders, frame PNGs, control files (`selectedFrames.txt`, `lesionVideos.txt`, `nonlesionVideos.txt`), and ground-truth annotation matches.
@@ -292,7 +302,53 @@ python scripts/visualize_pipeline.py --samples 12
 #### Step 8: PyTorch CADICADataset API & Custom Models
 [`src/data/dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/dataset.py) provides a flexible PyTorch `Dataset` (`CADICADataset`) returning standard dictionary items `{"image", "boxes", "labels", "patient_id", "frame_id", "metadata"}` with custom batching via `CADICADataset.collate_fn`. Supported by angiography-safe Albumentations pipelines in [`src/data/augment.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/augment.py) (CLAHE, brightness/contrast, gamma, noise/blur, rotation $\pm 10^\circ$, scaling 0.9–1.1; strictly **NO vertical flip**, **NO color jitter**, **NO lesion-slicing aggressive crops**).
 
-#### Step 9: Run Verification Test Suite
+#### Step 9: Model-Agnostic Evaluation Framework (Phase 2.3)
+Accepts predictions in a model-agnostic JSON format (`image_id -> [[x, y, w, h, score, class_id], ...]`) and produces comprehensive multi-level evaluation artifacts (detection metrics at IoU 0.5, 101-point COCO-style mAP@0.5 and mAP@0.5:0.95, confusion matrices, frame-level classification AUROC/sensitivity/specificity, patient-level aggregation, and patient-level bootstrapped 95% confidence intervals):
+
+```bash
+python scripts/evaluate.py --pred <path_to_preds.json> --split val --scheme 7class --conf 0.5 --run-name val_eval --find-threshold --bootstrap
+# Or: make evaluate
+```
+
+- **Expected Console Output**:
+  - `Loaded predictions: 2879 images`
+  - `Computing detection metrics (IoU=0.50, Conf=0.50)...`
+  - `Computing mAP@0.5 and mAP@0.5:0.95...`
+  - `Computing confusion matrix...`
+  - `Computing frame-level metrics...`
+  - `Computing patient-level metrics...`
+  - `Finding best confidence threshold by macro F1...`
+  - `Computing patient-level bootstrap 95% CIs (n=500)...`
+  - `[OK] Evaluation complete: outputs/eval/val_eval`
+- **Expected Artifacts Generated in `outputs/eval/<run_name>/`**:
+  - `metrics.json` — Comprehensive serialized metrics dictionary
+  - `metrics.md` — Formatted GitHub Markdown tables of all metrics
+  - `confusion_matrix.png` & `confusion_matrix_norm.png` — Heatmaps with background category
+  - `pr_curves.png` — Per-class Precision-Recall curves
+  - `f1_conf_curves.png` — Per-class and macro F1 vs. confidence threshold curves
+  - `roc_curve.png` & `frame_pr_curve.png` — Frame-level ROC and PR curves
+
+#### Step 10: Evaluation Sanity Check (Oracle vs. Random Baseline) (Phase 2.4)
+Evaluates two dummy baseline predictors on the validation split to verify evaluation framework integrity:
+1. **Oracle Predictor**: Ground-truth boxes as predictions with confidence 1.0 (fails loudly if metrics $\ne 1.0$).
+2. **Random Predictor**: Stochastic bounding boxes and confidence scores (expected near-zero metrics).
+
+```bash
+python scripts/sanity_check.py --split val --scheme 7class
+# Or: make sanity-check
+```
+
+- **Expected Console Output**:
+  - `Oracle: Micro F1=1.0000, Macro F1=1.0000, mAP@0.5=1.0000, Frame Acc=1.0000`
+  - `[PASS] Oracle sanity check PASSED with perfect 1.0000 across all metrics.`
+  - `Random: Micro F1=0.0011, Macro F1=0.0007, mAP@0.5=0.0099, Frame Acc=0.6363`
+  - `[PASS] Random predictor achieves expected near-zero detection performance.`
+  - `Sanity Check: ALL CHECKS PASSED [OK]`
+- **Expected Artifacts Generated**:
+  - `outputs/eval/oracle_val/` (`metrics.json`, `metrics.md`, PR curves, confusion matrices)
+  - `outputs/eval/random_val/` (`metrics.json`, `metrics.md`, PR curves, confusion matrices)
+
+#### Step 11: Run Verification Test Suite
 Executes the comprehensive automated pytest test suite:
 
 ```bash
@@ -300,7 +356,7 @@ pytest -v
 # Or: make test
 ```
 
-- **Expected Console Output**: `84 passed in ~100s`
+- **Expected Console Output**: `120 passed in ~98s`
 
 ---
 
@@ -409,17 +465,63 @@ for batch in loader:
 
 ---
 
-## 7. Roadmap (Phases 1-5)
-- **Phase 1: Project Setup & Dataset Indexing** ✅ *(Complete)*
+## 7. Phase 2 Results
+
+### Patient-Wise Split Distribution (`split_v1.csv` & YOLO Dataset)
+
+The 42 CADICA patients were partitioned using stratified search into strictly non-overlapping patient groups (Train 70%, Val 15%, Test 15%). Hard negatives were sampled at a ratio of 0.25 (1 negative for every 4 positive frames):
+
+| Split | Patients | Patients % | Total Frames | Frames % | Annotated Positives | Hard Negatives (0.25) | Total YOLO Images | Bounding Boxes | Boxes % |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Train** | 30 | 71.4% | 21,383 | 67.9% | 2,736 | 684 | 3,420 | 4,365 | 70.8% |
+| **Val** | 6 | 14.3% | 2,879 | 9.1% | 578 | 144 | 722 | 757 | 12.3% |
+| **Test** | 6 | 14.3% | 7,238 | 23.0% | 682 | 170 | 852 | 1,039 | 16.9% |
+| **Total** | **42** | **100.0%** | **31,500** | **100.0%** | **3,996** | **998** | **4,994** | **6,161** | **100.0%** |
+
+### Per-Class Bounding Box Distribution Across Splits
+
+| Category | Stenosis Range | Train Boxes (%) | Val Boxes (%) | Test Boxes (%) | Total Boxes | Split Balance Verification |
+|---|:---:|:---:|:---:|:---:|:---:|---|
+| `p0_20` | < 20% | 1,297 (29.7%) | 270 (35.7%) | 377 (36.3%) | **1,944** | Balanced across all splits |
+| `p20_50` | 20% – 50% | 801 (18.4%) | 129 (17.0%) | 198 (19.1%) | **1,128** | Balanced across all splits |
+| `p50_70` | 50% – 70% | 793 (18.2%) | 84 (11.1%) | 122 (11.7%) | **999** | Balanced across all splits |
+| `p70_90` | 70% – 90% | 623 (14.3%) | 111 (14.7%) | 159 (15.3%) | **893** | Balanced across all splits |
+| `p90_98` | 90% – 98% | 723 (16.6%) | 94 (12.4%) | 113 (10.9%) | **930** | Balanced across all splits |
+| `p99` | 99% (subtotal) | 44 (1.0%) | 5 (0.7%) | 14 (1.3%) | **63** | Preserved representation in val & test |
+| `p100` | 100% (total) | 84 (1.9%) | 64 (8.5%) | 56 (5.4%) | **204** | Exactly 1 patient in each split (`p25`, `p23`, `p11`) |
+| **Total** | — | **4,365** | **757** | **1,039** | **6,161** | Zero classes with 0 boxes in val or test |
+
+### 5-Fold Stratified Cross-Validation (`folds_5.csv`)
+
+| Fold | Patients Count | Total Frames | Annotated Boxes | Rare Classes Present | Patients Assigned |
+|:---:|:---:|:---:|:---:|:---:|---|
+| **Fold 0** | 8 | 6,175 | 1,157 | `p100`: 56, `p99`: 8 | `p1, p3, p11, p12, p19, p20, p29, p30` |
+| **Fold 1** | 8 | 6,978 | 1,175 | `p100`: 84, `p99`: 4 | `p7, p8, p9, p14, p25, p31, p33, p41` |
+| **Fold 2** | 8 | 7,233 | 1,112 | `p100`: 64, `p99`: 8 | `p10, p22, p23, p28, p35, p36, p37, p40` |
+| **Fold 3** | 9 | 5,467 | 1,516 | `p100`: 0, `p99`: 16 | `p4, p6, p13, p21, p24, p27, p34, p39, p42` |
+| **Fold 4** | 9 | 5,647 | 1,201 | `p100`: 0, `p99`: 27 | `p2, p5, p15, p16, p17, p18, p26, p32, p38` |
+
+### Baseline Sanity Check Verification Results (Validation Split)
+
+| Baseline Predictor | Micro F1 | Macro F1 | mAP@0.5 | mAP@0.5:0.95 | Frame Accuracy | Status |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Oracle Baseline** (Ground Truth as Predictions) | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **PASS [OK]** |
+| **Random Baseline** (Stochastic Boxes & Scores) | `0.0011` | `0.0007` | `0.0099` | `0.0099` | `0.6363` | **PASS [OK]** |
+
+---
+
+## 8. Roadmap (Phases 1-5)
+- **Phase 1: Project Setup & Dataset Indexing** ✅ *(Complete - v0.1.0)*
   - Scaffold creation, config loader, logging, dynamic dataset scanner, validator, metadata parser, frame indexing, and EDA.
-- **Phase 2: Data Preprocessing & Augmentation** 🔄 *(In Progress)*
-  - **Phase 2.1: Patient-Wise Splits & Stratified Cross-Validation** ✅ *(Complete)*: Patient-level 70/15/15 train/val/test splits (`split_v1.csv`), 5-fold cross-validation (`folds_5.csv`), zero leakage verification, and 3 configurable class schemes (`7class`, `binary`, `severity3`).
-  - **Phase 2.2: Data Pipeline, YOLO Export & Medical Augmentation** ✅ *(Complete)*: YOLO dataset exporter (`YOLOExporter`) with hard negative sampling, PyTorch `CADICADataset` with clinical metadata, angiography-safe Albumentations transforms, visual check grid, and normalization statistics.
-  - **Phase 2.3: Image Enhancement & Filtering**: Vessel enhancement filtering (Frangi/Hessian) and contrast pre-processing for low-visibility lesions.
-- **Phase 3: Model Architecture & Training**
+- **Phase 2: Data Pipeline, Augmentation, Splits & Evaluation** ✅ *(Complete - v0.2.0)*
+  - **Phase 2.1: Patient-Wise Splits & Stratified Cross-Validation** ✅: Patient-level 70/15/15 train/val/test splits (`split_v1.csv`), 5-fold cross-validation (`folds_5.csv`), zero leakage verification, and 3 configurable class schemes (`7class`, `binary`, `severity3`).
+  - **Phase 2.2: Data Pipeline, YOLO Export & Medical Augmentation** ✅: YOLO dataset exporter (`YOLOExporter`) with hard negative sampling, PyTorch `CADICADataset` with clinical metadata, angiography-safe Albumentations transforms, visual check grid, and normalization statistics.
+  - **Phase 2.3: Model-Agnostic Evaluation Framework** ✅: Detection metrics at IoU 0.5, 101-point COCO-style mAP@0.5 and mAP@0.5:0.95, confusion matrices, frame-level classification AUROC/sensitivity/specificity, patient-level aggregation, and patient bootstrap 95% CIs.
+  - **Phase 2.4: Wrap-Up, Sanity Checks & Pipeline Automation** ✅: Dummy predictor validation (`scripts/sanity_check.py`), automated pipeline runners (`run_phase2.bat`, `run_phase2.sh`, `Makefile`), and comprehensive test verification (120 tests passing).
+- **Phase 3: Model Architecture & Training** 🔄 *(Next)*
   - Baseline object detection backbone (YOLOv8 / Faster R-CNN / DETR adapted for ICA), loss functions, model trainer pipeline.
-- **Phase 4: Evaluation & Performance Analysis**
-  - Lesion detection metrics calculator, IoU thresholding, confusion matrix, mAP evaluation, ROC-AUC analysis.
+- **Phase 4: Comparative Evaluation & Clinical Benchmarks**
+  - Cross-model benchmark evaluation, per-vessel and per-patient analysis, ROC-AUC comparison against clinical baselines.
 - **Phase 5: CLI Tooling, Reporting & Deployment**
   - Inference CLI, summary reporting, automated figure generation, model export (ONNX/TorchScript).
 
@@ -439,12 +541,38 @@ Agent-TT evaluates CAD lesion detection using standard clinical & computer visio
 
 ---
 
-## 9. Changelog Link
+## 9. Metrics Tracked
+Agent-TT evaluates CAD lesion detection using standard clinical & computer vision object detection metrics:
+- **Accuracy**: Overall classification accuracy on lesion vs non-lesion frames.
+- **Precision**: Proportion of true CAD lesions among detected bounding boxes.
+- **Recall (Sensitivity)**: Proportion of actual CAD lesions successfully detected.
+- **F1 Score**: Harmonic mean of Precision and Recall.
+- **IoU (Intersection over Union)**: Bounding box overlap quality measure.
+- **mAP@0.5**: Mean Average Precision at IoU threshold 0.50.
+- **mAP@0.5:0.95**: Mean Average Precision averaged over IoU thresholds 0.50 to 0.95 (step 0.05).
+- **Confusion Matrix**: True Positive, False Positive, True Negative, False Negative counts.
+- **ROC-AUC**: Area Under Receiver Operating Characteristic Curve for lesion frame classification.
+
+---
+
+## 10. Changelog Link
 For full version history and updates, view the [`CHANGELOG.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/CHANGELOG.md) file.
 
 ---
 
-## 10. Update Log
+## 11. Update Log
+- **2026-10-01**: **Phase 2 Complete (Release v0.2.0) - Data Pipeline, Augmentation, Splits & Evaluation**:
+  - Implemented evaluation sanity check runner ([`scripts/sanity_check.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/sanity_check.py)) proving perfect 1.0 metrics for Oracle predictor and near-zero for Random baseline.
+  - Added unified Phase 2 execution runners ([`run_phase2.bat`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/run_phase2.bat), [`run_phase2.sh`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/run_phase2.sh), and `make phase2`).
+  - Added real split distribution and sanity check benchmark tables to README.
+  - 120 total automated pytest tests passing clean with zero warnings. Tagged git commit as `v0.2.0`.
+- **2026-10-01**: **Phase 2.3 Complete - Model-Agnostic Evaluation Framework**:
+  - Implemented model-agnostic evaluation package [`src/evaluation/`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation):
+    - [`src/evaluation/matching.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/matching.py): IoU computation and greedy score-ordered prediction-to-ground-truth matching at any IoU threshold, supporting both class-aware and class-agnostic modes.
+    - [`src/evaluation/metrics.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/metrics.py): Object detection metrics (TP, FP, FN, Precision, Recall, F1, mean IoU per class and macro/weighted), 101-point COCO-style interpolated AP per class, mAP@0.5 and mAP@0.5:0.95, confusion matrices with background class, frame-level classification metrics (sensitivity, specificity, accuracy, AUROC, PR-AUC), patient-level aggregation, best confidence threshold optimization via validation macro F1, and patient-level bootstrapped 95% confidence intervals (1,000 iterations).
+    - [`src/evaluation/report.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/report.py): Generates structured JSON summaries (`metrics.json`), comprehensive Markdown reports (`metrics.md`), and high-resolution figures: confusion matrix heatmaps (raw and normalized), PR curves, F1-vs-confidence curves, and frame-level ROC / PR curves.
+    - [`scripts/evaluate.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/evaluate.py): Flexible CLI accepting model predictions (`--pred`) in JSON, loading ground truth from custom JSON or directly from `data_index` split (`--split val/test/train`), and controlling parameters (`--scheme`, `--conf`, `--iou`, `--bootstrap`, `--find-threshold`).
+  - Added test suite [`tests/test_evaluation.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_evaluation.py) with 34 tests covering hand-computed toy cases (perfect detections, zero predictions, known IoU geometries, PR boundary points, ROC curve monotonicity, bootstrap bounds, and patient aggregation). Full project test suite: 118 tests passing clean.
 - **2026-10-01**: **Phase 2.2 Complete - Data Pipeline, YOLO Export & Medical Augmentation**:
   - Implemented `YOLOExporter` ([`src/data/yolo_export.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/yolo_export.py)) and CLI ([`scripts/export_yolo.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/export_yolo.py)) generating standard Ultralytics YOLO dataset in `outputs/yolo_dataset/` (`images/`, `labels/`, `data.yaml`) with symlinks/copy, configurable schemes (`7class`, `binary`, `severity3`), `--neg-ratio` hard negative sampling (from nonlesion videos and unannotated frames $\ge 15$ frames from lesions), and `--fold N` CV support.
   - Implemented `CADICADataset` ([`src/data/dataset.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/dataset.py)) PyTorch Dataset returning `(image tensor, boxes, labels, patient_id, frame_id, metadata)` with custom `collate_fn`.
