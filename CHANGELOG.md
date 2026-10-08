@@ -2,6 +2,37 @@
 
 All notable changes to the Agent-TT (CADICA-Agent) project will be documented in this file.
 
+## [0.3.0] - 2026-10-07 - Phase 3.2: YOLO Training, Prediction & Evaluation Pipeline
+
+### Milestone Summary
+Phase 3.2 establishes an end-to-end, medical angiography-tailored YOLO detection pipeline based on Ultralytics (YOLO11s with automatic YOLOv8s fallback). The pipeline features Windows-safe multiprocessing, angiography-specific augmentation constraints, non-destructive rare-class 3x oversampling, low-threshold inference on canonical evaluation splits, automated validation threshold calibration with frozen test evaluation, cross-framework mAP verification, and diagnostic error visualizers generating 3x4 prediction and worst-case error grids. All 132 automated tests pass clean.
+
+### Added
+- **YOLO Training Runner ([`src/models/yolo_trainer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/models/yolo_trainer.py) & [`scripts/train_yolo.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/train_yolo.py))**:
+  - Implemented `train_yolo()` using Ultralytics with primary architecture `yolo11s.pt` and automatic fallback to `yolov8s.pt`.
+  - Configured angiography-safe augmentations preserving coronary geometry: strictly NO vertical or horizontal flips (`flipud=0, fliplr=0`), mild luminance variation (`hsv_v=0.2, hsv_h=0, hsv_s=0`), bounded rotation (`degrees=10`), mild affine translation/scaling (`scale=0.1, translate=0.05`), mosaic with `close_mosaic=10`, `mixup=0`, early stopping `patience=25`, and cosine learning rate decay (`cos_lr=True`).
+  - Added Windows-safe multiprocessing defaults (`workers=2`, `auto` batch on GPU, explicit device logging).
+  - Added `--oversample-rare` functionality: non-destructively generates `train_oversampled.txt` repeating keyframes containing rare stenosis classes (`p99`, `p100`, `p90_98`) up to 3x per epoch without creating duplicate image files on disk.
+  - Implemented run metadata tracking saving `run_config.json` (CLI arguments, git hash, python/torch/ultralytics versions, seed, device) and `curves.png` (training loss, precision, recall, and mAP curves).
+  - Added `--smoke-test` mode (2 epochs, fraction=0.1) for rapid pipeline verification.
+- **Low-Threshold Inference Pipeline ([`src/models/yolo_infer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/models/yolo_infer.py) & [`scripts/predict_yolo.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/predict_yolo.py))**:
+  - Runs `best.pt` inference on canonical evaluation splits (`val` or `test` from `src/data/eval_sets.py`).
+  - Uses low confidence `conf=0.001`, `iou=0.6`, `max_det=50` to retain raw model distribution for threshold sweeping.
+  - Formats detections into `[x, y, w, h, score, class]` in absolute pixel coordinates matching `src/evaluation/matching.py`, serialized to `preds_<split>.json`.
+- **Frozen Threshold Calibration & Evaluation Runner ([`src/models/eval_runner.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/models/eval_runner.py) & [`scripts/evaluate_run.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/evaluate_run.py))**:
+  - Calibrates optimal confidence threshold maximizing macro F1 strictly on the **validation split**.
+  - Freezes optimal threshold into `outputs/runs/<run_name>/threshold.json`.
+  - Applies frozen threshold **once** to the unseen test split without data snooping.
+  - Evaluates full Phase 2 clinical report suite: object-level P/R/F1, AP, mAP@0.5, mAP@0.5:0.95, mean IoU, confusion matrix, PR curves, F1-vs-conf curves, frame-level AUROC/PR-AUC, patient-level lesion detection, $\ge 70\%$ stenosis identification, and patient bootstrap 95% CIs.
+  - Compares custom `mAP@0.5` against Ultralytics native `mAP@0.5` from `results.csv` and raises warning if difference exceeds 0.02.
+- **Error Analysis & Prediction Grids ([`src/models/visualization.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/models/visualization.py) & [`scripts/show_predictions.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/show_predictions.py))**:
+  - Generates 3x4 image grids with ground-truth boxes in **green** and model detections in **red**:
+    - `val_predictions_grid.png`: 12 representative validation frames.
+    - `worst_false_negatives_grid.png`: 12 worst missed lesions prioritized by stenosis severity and box area.
+    - `worst_false_positives_grid.png`: 12 worst false alarms sorted by detection confidence.
+- **Automated Test Suite Expansion ([`tests/test_yolo_pipeline.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_yolo_pipeline.py))**:
+  - Added 7 unit and integration tests covering device selection, rare-class oversampling logic, coordinate format conversion, curves plotting, mAP difference tolerance checking, error sorting, and visual grid rendering. Total passing tests increased to 132 (100% pass rate).
+
 ## [0.2.1] - 2026-10-01 - Phase 3.1: Evaluation Framework Bugfixes & Canonical Evaluation Sets
 
 ### Milestone Summary

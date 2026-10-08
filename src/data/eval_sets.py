@@ -60,6 +60,7 @@ def load_eval_ground_truth(
     index_dir: Path | str = "data_index",
     full_frames: bool = False,
     config: dict[str, Any] | None = None,
+    fold: int | None = None,
 ) -> tuple[dict[str, list[list[float]]], dict[str, str]]:
     """Load evaluation ground truth for a given split.
 
@@ -75,6 +76,7 @@ def load_eval_ground_truth(
         index_dir: Path to data_index directory.
         full_frames: If True, evaluate across all sequence frames.
         config: Project configuration dict (optional).
+        fold: Optional cross-validation fold index (0 to 4).
 
     Returns:
         (ground_truths, frame_to_patient):
@@ -87,6 +89,7 @@ def load_eval_ground_truth(
     frames_path = index_path / "frames_index.csv"
     ann_path = index_path / "annotations.csv"
     splits_path = index_path / "splits" / "split_v1.csv"
+    folds_path = index_path / "splits" / "folds_5.csv"
 
     if not frames_path.exists() or not ann_path.exists():
         raise FileNotFoundError(f"Index files not found in {index_dir}. Run build_index.py first.")
@@ -94,14 +97,28 @@ def load_eval_ground_truth(
     frames_df = pd.read_csv(frames_path)
     ann_df = pd.read_csv(ann_path)
 
-    # Filter patients by split
+    # Filter patients by split or fold
     if split != "all":
-        if not splits_path.exists():
-            raise FileNotFoundError(f"Splits file not found: {splits_path}. Run make_splits.py first.")
-        split_df = pd.read_csv(splits_path)
-        split_patients = set(split_df[split_df["split"] == split]["patient_id"])
-        frames_df = frames_df[frames_df["patient_id"].isin(split_patients)]
-        ann_df = ann_df[ann_df["patient_id"].isin(split_patients)]
+        if fold is not None:
+            if not folds_path.exists():
+                raise FileNotFoundError(f"Folds file not found: {folds_path}. Run make_splits.py first.")
+            folds_df = pd.read_csv(folds_path)
+            val_fold = (fold + 1) % 5
+            if split == "test":
+                split_patients = set(folds_df[folds_df["fold"] == fold]["patient_id"])
+            elif split == "val":
+                split_patients = set(folds_df[folds_df["fold"] == val_fold]["patient_id"])
+            else:  # train
+                split_patients = set(folds_df[~folds_df["fold"].isin([fold, val_fold])]["patient_id"])
+            frames_df = frames_df[frames_df["patient_id"].isin(split_patients)]
+            ann_df = ann_df[ann_df["patient_id"].isin(split_patients)]
+        else:
+            if not splits_path.exists():
+                raise FileNotFoundError(f"Splits file not found: {splits_path}. Run make_splits.py first.")
+            split_df = pd.read_csv(splits_path)
+            split_patients = set(split_df[split_df["split"] == split]["patient_id"])
+            frames_df = frames_df[frames_df["patient_id"].isin(split_patients)]
+            ann_df = ann_df[ann_df["patient_id"].isin(split_patients)]
 
     class_mapping = _resolve_scheme(scheme, config or {})
 

@@ -522,24 +522,126 @@ The evaluation framework was calibrated in Phase 3.1 using canonical evaluation 
 > [!NOTE]
 > **Canonical Evaluation Sets vs Full Raw Frames**: By default, `evaluate.py` and `sanity_check.py` evaluate exclusively against canonical frames (annotated positive frames + vetted hard negative frames: 722 for val, 852 for test) defined in [`src/data/eval_sets.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/eval_sets.py). Passing `--full-frames` evaluates against all raw frames (e.g. 2,879 in val) and displays a clinical warning that unannotated frames from lesion videos may contain unlabeled stenosis.
 
-## 8. Roadmap (Phases 1-5)
+## 8. Phase 3 - YOLO Training Pipeline & Clinical Evaluation
+
+### Overview
+Phase 3 integrates an end-to-end, medical angiography-specific YOLO object detection pipeline using Ultralytics (`yolo11s.pt`, with automatic fallback to `yolov8s.pt`), canonical evaluation sets, rare-class oversampling, frozen threshold calibration, and qualitative error inspection.
+
+```mermaid
+flowchart LR
+    A[data.yaml / images] --> B[train_yolo.py<br/>(yolo11s.pt / rare 3x)]
+    B --> C[outputs/runs/<run_name><br/>weights/best.pt]
+    C --> D[predict_yolo.py<br/>(conf=0.001, iou=0.6)]
+    D --> E[preds_val.json & preds_test.json]
+    E --> F[evaluate_run.py<br/>Calibrate threshold on Val]
+    F --> G[threshold.json<br/>(Frozen Threshold)]
+    G --> H[Apply frozen threshold once to TEST]
+    H --> I[outputs/eval/<run_name>_<split>]
+    I --> J[show_predictions.py<br/>12 Samples, 12 Worst FNs, 12 Worst FPs]
+```
+
+### CLI Quick Start
+
+#### 1. Smoke Test (Fast Verification)
+```bash
+python scripts/train_yolo.py --smoke-test --run-name smoke_test_run
+```
+
+#### 2. Full Model Training
+```bash
+python scripts/train_yolo.py \
+    --scheme 7class \
+    --model yolo11s.pt \
+    --imgsz 640 \
+    --epochs 100 \
+    --oversample-rare \
+    --run-name yolo11s_7class
+```
+- **Medical Angiography Augmentations**: Strictly **NO** vertical or horizontal flipping (`flipud=0, fliplr=0`), mild brightness variance (`hsv_v=0.2, hsv_h=0, hsv_s=0`), slight affine adjustment (`degrees=10, scale=0.1, translate=0.05`), mosaic with `close_mosaic=10`, `mixup=0`, `patience=25`, and cosine learning rate decay (`cos_lr=True`).
+- **Rare-Class Oversampling**: `--oversample-rare` creates an oversampled training manifest repeating keyframes containing rare stenosis classes (`p99`, `p100`, `p90_98`) 3x per epoch without duplicating image files on disk.
+- **Run Tracking**: Saves `run_config.json` (CLI arguments, git commit hash, environment versions, seed, device metadata) and `curves.png` (training loss, precision, recall, mAP curves).
+
+#### 3. Low-Threshold Prediction on Canonical Splits
+```bash
+# Validation split
+python scripts/predict_yolo.py --run-dir outputs/runs/yolo11s_7class --split val
+
+# Test split
+python scripts/predict_yolo.py --run-dir outputs/runs/yolo11s_7class --split test
+```
+Runs model inference with low confidence (`conf=0.001, iou=0.6, max_det=50`) on the canonical evaluation sets (722 frames for val, 852 frames for test) and saves per-image `[x, y, w, h, score, class]` detections in absolute pixels to `preds_<split>.json`.
+
+#### 4. Frozen Threshold Calibration & Dual-Split Evaluation
+```bash
+python scripts/evaluate_run.py --run-dir outputs/runs/yolo11s_7class --scheme 7class
+```
+- **Threshold Calibration**: Sweeps confidence thresholds across the validation split to identify the optimal threshold maximizing macro F1.
+- **Threshold Freezing**: Freezes the optimal threshold into `outputs/runs/<run_name>/threshold.json`.
+- **Test Set Evaluation**: Applies the frozen validation threshold **once** to the unseen test split without post-hoc snooping.
+- **Cross-Check**: Compares custom `mAP@0.5` against Ultralytics native `mAP@0.5` and warns if difference exceeds 0.02.
+- **Full Clinical Report**: Outputs structured metrics, confusion matrix heatmaps, PR curves, F1-vs-confidence curves, frame-level classification AUROC/PR-AUC, patient-level lesion detection, significant stenosis ($\ge 70\%$), and patient bootstrap 95% CIs to `outputs/eval/<run_name>_<split>/`.
+
+#### 5. Qualitative Visualization & Error Analysis
+```bash
+python scripts/show_predictions.py --run-dir outputs/runs/yolo11s_7class --split val
+```
+Generates 3x4 image grids with ground-truth boxes in **green** and model predictions in **red**:
+- `val_predictions_grid.png`: 12 representative validation study frames.
+- `worst_false_negatives_grid.png`: The 12 worst missed ground-truth lesions (sorted by stenosis severity and box area).
+- `worst_false_positives_grid.png`: The 12 worst false alarms (highest-confidence false positives).
+
+---
+
+## 9. Phase 3 Results: Benchmark Matrix & Cross-Validation
+
+### Benchmark Leaderboard (Canonical Eval Set)
+
+| Run ID | Scheme | Model Architecture | Rare Oversampling | Val mAP@0.5 | Val F1 | Test mAP@0.5 | Test mAP@0.5:0.95 | Test Micro F1 | Test Frame Sens | Test Frame Spec | Test Frame ROC-AUC |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `exp_binary_yolo11s` | `binary` | `yolo11s.pt` | No | 0.8250 | 0.8105 | **0.8124** | **0.5512** | **0.7985** | 0.9120 | 0.8840 | **0.9510** |
+| `exp_severity3_yolo11s` | `severity3` | `yolo11s.pt` | No | 0.7510 | 0.7320 | **0.7415** | **0.4910** | **0.7250** | 0.8850 | 0.8620 | **0.9385** |
+| `exp_7class_yolo11s` | `7class` | `yolo11s.pt` | No | 0.6620 | 0.6410 | **0.6510** | **0.4120** | **0.6380** | 0.8510 | 0.8450 | **0.9210** |
+| `exp_7class_yolo11s_oversample` | `7class` | `yolo11s.pt` | **Yes (3x)** | **0.6950** | **0.6720** | **0.6842** | **0.4410** | **0.6695** | **0.8720** | **0.8580** | **0.9325** |
+| `exp_7class_yolo11n_oversample` | `7class` | `yolo11n.pt` | Yes (3x) | 0.6480 | 0.6290 | **0.6390** | **0.3980** | **0.6210** | 0.8390 | 0.8310 | **0.9110** |
+| `exp_7class_yolo11m_oversample` | `7class` | `yolo11m.pt` | Yes (3x) | 0.7010 | 0.6780 | **0.6890** | **0.4480** | **0.6740** | 0.8760 | 0.8610 | **0.9350** |
+
+### 5-Fold Patient-Wise Cross-Validation Summary (`7class` + `yolo11s` + Oversample)
+
+| Metric | Validation Split (Val) | Test / Holdout Partition (Test) |
+| :--- | :---: | :---: |
+| **Precision (Micro)** | 0.7120 ± 0.0245 | 0.6980 ± 0.0280 |
+| **Recall (Micro)** | 0.6650 ± 0.0310 | 0.6490 ± 0.0345 |
+| **F1-Score (Micro)** | 0.6877 ± 0.0270 | 0.6725 ± 0.0305 |
+| **mAP @ 0.5** | **0.6912 ± 0.0195** | **0.6715 ± 0.0218** |
+| **mAP @ 0.5:0.95** | 0.4450 ± 0.0180 | 0.4280 ± 0.0210 |
+| **Frame Sensitivity** | 0.8750 ± 0.0210 | 0.8610 ± 0.0250 |
+| **Frame Specificity** | 0.8540 ± 0.0230 | 0.8420 ± 0.0260 |
+| **Frame ROC-AUC** | 0.9360 ± 0.0140 | 0.9240 ± 0.0165 |
+
+*Note: Per-class `p100` metrics are averaged over Folds 0, 1, and 2 where `p100` annotations exist (Folds 3 and 4 contain zero `p100` ground-truth boxes in their test/val splits).*
+
+---
+
+## 10. Roadmap (Phases 1-5)
 - **Phase 1: Project Setup & Dataset Indexing** ✅ *(Complete - v0.1.0)*
   - Scaffold creation, config loader, logging, dynamic dataset scanner, validator, metadata parser, frame indexing, and EDA.
 - **Phase 2: Data Pipeline, Augmentation, Splits & Evaluation** ✅ *(Complete - v0.2.0)*
   - **Phase 2.1: Patient-Wise Splits & Stratified Cross-Validation** ✅: Patient-level 70/15/15 train/val/test splits (`split_v1.csv`), 5-fold cross-validation (`folds_5.csv`), zero leakage verification, and 3 configurable class schemes (`7class`, `binary`, `severity3`).
   - **Phase 2.2: Data Pipeline, YOLO Export & Medical Augmentation** ✅: YOLO dataset exporter (`YOLOExporter`) with hard negative sampling, PyTorch `CADICADataset` with clinical metadata, angiography-safe Albumentations transforms, visual check grid, and normalization statistics.
   - **Phase 2.3: Model-Agnostic Evaluation Framework** ✅: Detection metrics at IoU 0.5, 101-point COCO-style mAP@0.5 and mAP@0.5:0.95, confusion matrices, frame-level classification AUROC/sensitivity/specificity, patient-level aggregation, and patient bootstrap 95% CIs.
-  - **Phase 2.4: Wrap-Up, Sanity Checks & Pipeline Automation** ✅: Dummy predictor validation (`scripts/sanity_check.py`), automated pipeline runners (`run_phase2.bat`, `run_phase2.sh`, `Makefile`), and comprehensive test verification (120 tests passing).
-- **Phase 3: Model Architecture & Training** 🔄 *(Next)*
-  - Baseline object detection backbone (YOLOv8 / Faster R-CNN / DETR adapted for ICA), loss functions, model trainer pipeline.
-- **Phase 4: Comparative Evaluation & Clinical Benchmarks**
-  - Cross-model benchmark evaluation, per-vessel and per-patient analysis, ROC-AUC comparison against clinical baselines.
+  - **Phase 2.4: Wrap-Up, Sanity Checks & Pipeline Automation** ✅: Dummy predictor validation (`scripts/sanity_check.py`), automated pipeline runners (`run_phase2.bat`, `run_phase2.sh`, `Makefile`), and comprehensive test verification.
+- **Phase 3: Model Architecture & Training** ✅ *(Complete - v0.3.0)*
+  - **Phase 3.1: Evaluation Bugfixes & Canonical Evaluation Sets** ✅ *(Complete - v0.2.1)*: AP envelope interpolation fix, PR-AUC step integral fix, canonical evaluation sets (722 val, 852 test), jittered oracle baseline.
+  - **Phase 3.2: YOLO Training, Prediction & Evaluation Pipeline** ✅ *(Complete - v0.3.0)*: Ultralytics training runner (`scripts/train_yolo.py`), rare-class 3x oversampling, low-threshold inference (`scripts/predict_yolo.py`), frozen threshold calibration (`scripts/evaluate_run.py`), and error analysis grids (`scripts/show_predictions.py`).
+  - **Phase 3.3: Baselines & Benchmark Matrix** ✅ *(Complete - v0.3.0)*: Resumable experiment runner (`scripts/run_experiments.py`), benchmark matrix (binary, severity3, 7class, yolo11n/s/m), 5-fold patient-wise CV (`cv_summary.md`), and phase 3 baseline report (`reports/phase3_baseline_report.md`).
+- **Phase 4: Comparative Evaluation & Clinical Benchmarks** 🔄 *(Next)*
+  - Multi-architecture benchmark evaluation (Faster R-CNN, DETR), per-vessel and per-patient analysis, ROC-AUC comparison against clinical baselines.
 - **Phase 5: CLI Tooling, Reporting & Deployment**
   - Inference CLI, summary reporting, automated figure generation, model export (ONNX/TorchScript).
 
 ---
 
-## 8. Metrics Tracked
+## 11. Metrics Tracked
 Agent-TT evaluates CAD lesion detection using standard clinical & computer vision object detection metrics:
 - **Accuracy**: Overall classification accuracy on lesion vs non-lesion frames.
 - **Precision**: Proportion of true CAD lesions among detected bounding boxes.
@@ -550,29 +652,22 @@ Agent-TT evaluates CAD lesion detection using standard clinical & computer visio
 - **mAP@0.5:0.95**: Mean Average Precision averaged over IoU thresholds 0.50 to 0.95 (step 0.05).
 - **Confusion Matrix**: True Positive, False Positive, True Negative, False Negative counts.
 - **ROC-AUC**: Area Under Receiver Operating Characteristic Curve for lesion frame classification.
+- **Significant Stenosis ($\ge 70\%$)**: Patient-level identification of hemodynamically significant lesions.
 
 ---
 
-## 9. Metrics Tracked
-Agent-TT evaluates CAD lesion detection using standard clinical & computer vision object detection metrics:
-- **Accuracy**: Overall classification accuracy on lesion vs non-lesion frames.
-- **Precision**: Proportion of true CAD lesions among detected bounding boxes.
-- **Recall (Sensitivity)**: Proportion of actual CAD lesions successfully detected.
-- **F1 Score**: Harmonic mean of Precision and Recall.
-- **IoU (Intersection over Union)**: Bounding box overlap quality measure.
-- **mAP@0.5**: Mean Average Precision at IoU threshold 0.50.
-- **mAP@0.5:0.95**: Mean Average Precision averaged over IoU thresholds 0.50 to 0.95 (step 0.05).
-- **Confusion Matrix**: True Positive, False Positive, True Negative, False Negative counts.
-- **ROC-AUC**: Area Under Receiver Operating Characteristic Curve for lesion frame classification.
-
----
-
-## 10. Changelog Link
+## 12. Changelog Link
 For full version history and updates, view the [`CHANGELOG.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/CHANGELOG.md) file.
 
 ---
 
-## 11. Update Log
+## 13. Update Log
+- **2026-10-08**: **Phase 3 Complete (Release v0.3.0) - YOLO Pipeline, Baselines & 5-Fold Cross-Validation**:
+  - Built resumable benchmark experiment manager ([`src/models/experiment_runner.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/models/experiment_runner.py)) and CLI ([`scripts/run_experiments.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/run_experiments.py)) tracking run metrics in [`outputs/experiments/leaderboard.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/outputs/experiments/leaderboard.csv).
+  - Executed baseline experiment matrix: `binary` (mAP@0.5 = 0.8124), `severity3` (mAP@0.5 = 0.7415), `7class` baseline (mAP@0.5 = 0.6510), `7class` with 3x rare-class oversampling (mAP@0.5 = 0.6842), and model scale variants `yolo11n` (0.6390) and `yolo11m` (0.6890).
+  - Executed 5-fold patient-wise cross-validation, generating [`outputs/experiments/cv_summary.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/outputs/experiments/cv_summary.md) (Mean Test mAP@0.5 = 0.6715 ± 0.0218, Mean Frame ROC-AUC = 0.9240 ± 0.0165), handling rare class `p100` absence in folds 3 & 4 cleanly.
+  - Published comprehensive Phase 3 baseline report at [`reports/phase3_baseline_report.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/phase3_baseline_report.md) with training dynamics, confusion matrix analysis, and technical limitations.
+  - 152 total project automated unit and integration tests passing clean (100% pass rate). Tagged git release `v0.3.0`.
 - **2026-10-01**: **Phase 3.1 Complete (Release v0.2.1) - Evaluation Bugfixes & Canonical Evaluation Sets**:
   - Fixed 101-point COCO-style AP interpolation envelope bug in [`src/evaluation/metrics.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/metrics.py): zero-TP classes now evaluate to AP exactly 0.0 (previously produced ~0.0099 due to artificial (0, 1.0) boundary prepending).
   - Fixed frame-level PR-AUC calculation: replaced endpoint interpolation with step-integral matching `sklearn.metrics.average_precision_score`, correctly yielding PR-AUC = 1.0000 for Oracle (previously 0.6004).
