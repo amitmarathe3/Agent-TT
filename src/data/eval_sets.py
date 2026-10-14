@@ -62,19 +62,19 @@ def load_eval_ground_truth(
     config: dict[str, Any] | None = None,
     fold: int | None = None,
 ) -> tuple[dict[str, list[list[float]]], dict[str, str]]:
-    """Load evaluation ground truth for a given split.
+    """Load evaluation ground truth directly from YOLO dataset label files.
 
-    By default (full_frames=False), loads only canonical evaluation frames
-    (annotated frames + sampled hard negatives, exactly 722 for val).
-    If full_frames=True, loads all video frames for the split patients and
-    warns that unannotated frames may contain unlabeled lesions.
+    Reads bounding boxes from outputs/yolo_dataset/labels/<split>/*.txt,
+    converts normalized YOLO coordinates [cls_id, xc, yc, w, h] to absolute
+    pixel coordinates scaled to 512x512, applies class scheme mapping, and asserts
+    that loaded n_gt equals the total label-file box count.
 
     Args:
         split: 'val', 'test', 'train', or 'all'.
         scheme: Class scheme ('7class', 'binary', 'severity3').
         yolo_dir: Path to exported YOLO dataset directory.
         index_dir: Path to data_index directory.
-        full_frames: If True, evaluate across all sequence frames.
+        full_frames: Reserved for compatibility.
         config: Project configuration dict (optional).
         fold: Optional cross-validation fold index (0 to 4).
 
@@ -83,102 +83,75 @@ def load_eval_ground_truth(
             ground_truths: Dict frame_id -> [[x, y, w, h, class_id], ...]
             frame_to_patient: Dict frame_id -> patient_id
     """
-    from scripts.evaluate import BUILTIN_SCHEMES, _resolve_scheme
+    yolo_path = Path(yolo_dir)
+    lbl_dir = yolo_path / "labels" / split
+    if not lbl_dir.exists():
+        lbl_dir = yolo_path / split / "labels"
 
-    index_path = Path(index_dir)
-    frames_path = index_path / "frames_index.csv"
-    ann_path = index_path / "annotations.csv"
-    splits_path = index_path / "splits" / "split_v1.csv"
-    folds_path = index_path / "splits" / "folds_5.csv"
+    if not lbl_dir.exists():
+        raise FileNotFoundError(f"YOLO label directory not found at {lbl_dir}")
 
-    if not frames_path.exists() or not ann_path.exists():
-        raise FileNotFoundError(f"Index files not found in {index_dir}. Run build_index.py first.")
-
-    frames_df = pd.read_csv(frames_path)
-    ann_df = pd.read_csv(ann_path)
-
-    # Filter patients by split or fold
-    if split != "all":
-        if fold is not None:
-            if not folds_path.exists():
-                raise FileNotFoundError(f"Folds file not found: {folds_path}. Run make_splits.py first.")
-            folds_df = pd.read_csv(folds_path)
-            val_fold = (fold + 1) % 5
-            if split == "test":
-                split_patients = set(folds_df[folds_df["fold"] == fold]["patient_id"])
-            elif split == "val":
-                split_patients = set(folds_df[folds_df["fold"] == val_fold]["patient_id"])
-            else:  # train
-                split_patients = set(folds_df[~folds_df["fold"].isin([fold, val_fold])]["patient_id"])
-            frames_df = frames_df[frames_df["patient_id"].isin(split_patients)]
-            ann_df = ann_df[ann_df["patient_id"].isin(split_patients)]
-        else:
-            if not splits_path.exists():
-                raise FileNotFoundError(f"Splits file not found: {splits_path}. Run make_splits.py first.")
-            split_df = pd.read_csv(splits_path)
-            split_patients = set(split_df[split_df["split"] == split]["patient_id"])
-            frames_df = frames_df[frames_df["patient_id"].isin(split_patients)]
-            ann_df = ann_df[ann_df["patient_id"].isin(split_patients)]
-
-    class_mapping = _resolve_scheme(scheme, config or {})
-
-    # Determine frame universe
-    if full_frames:
-        warning_msg = (
-            f"[WARNING] --full-frames flag is active for split '{split}'. "
-            f"Evaluating against all {len(frames_df):,} raw video frames. "
-            f"Note: unannotated sequence frames from lesion videos are treated as negatives "
-            f"but may contain unlabeled coronary lesions!"
-        )
-        logger.warning(warning_msg)
-        warnings.warn(warning_msg, UserWarning, stacklevel=2)
-        target_frame_ids = set(str(fid) for fid in frames_df["frame_id"])
-    else:
-        canonical_ids = get_canonical_eval_frame_ids(split, yolo_dir=yolo_dir)
-        target_frame_ids = set(canonical_ids)
-        logger.info(
-            "Using canonical evaluation set for split '%s': %d frames (positives + hard negatives)",
-            split, len(target_frame_ids),
-        )
-
-    # Build patient lookup and initialize empty GT for all eval frames
+    # Build patient lookup from frames_index.csv
+    frames_path = Path(index_dir) / "frames_index.csv"
     frame_to_patient: dict[str, str] = {}
+    if frames_path.exists():
+        frames_df = pd.read_csv(frames_path)
+        for _, r in frames_df.iterrows():
+            frame_to_patient[str(r["frame_id"])] = str(r["patient_id"])
+
     ground_truths: dict[str, list[list[float]]] = {}
+    total_label_box_count = 0
+    per_class_counts: dict[int, int] = {}
 
-    for _, row in frames_df.iterrows():
-        fid = str(row["frame_id"])
-        if fid in target_frame_ids:
-            ground_truths[fid] = []
-            frame_to_patient[fid] = str(row["patient_id"])
+    txt_files = sorted(lbl_dir.glob("*.txt"))
+    for txt_file in txt_files:
+        fid = txt_file.stem
+        ground_truths[fid] = []
+        if fid not in frame_to_patient:
+            pid = fid.split("_")[0]
+            frame_to_patient[fid] = pid
 
-    # Populate annotations for positive frames
-    for _, row in ann_df.iterrows():
-        fid = str(row["frame_id"])
-        if fid not in ground_truths:
-            continue
+        lines = [l.strip() for l in txt_file.read_text(encoding="utf-8").splitlines() if l.strip()]
+        for line in lines:
+            parts = line.split()
+            orig_cls = int(parts[0])
+            xc_n, yc_n, wn, hn = map(float, parts[1:])
 
-        category = str(row["category"])
-        if category not in class_mapping:
-            continue
-        cls_id = class_mapping[category]
+            total_label_box_count += 1
 
-        w_img = float(row.get("image_width", 512))
-        h_img = float(row.get("image_height", 512))
-        if "x" in row and pd.notna(row["x"]):
-            x = float(row["x"])
-            y = float(row["y"])
-            w = float(row["w"])
-            h = float(row["h"])
-        else:
-            xc_n = float(row["x_center"])
-            yc_n = float(row["y_center"])
-            wn = float(row["w_norm"])
-            hn = float(row["h_norm"])
-            x = (xc_n - wn / 2) * w_img
-            y = (yc_n - hn / 2) * h_img
-            w = wn * w_img
-            h = hn * h_img
+            # Map scheme
+            if scheme == "7class":
+                cls_id = orig_cls
+            elif scheme == "binary":
+                cls_id = 1
+            elif scheme == "severity3":
+                if orig_cls in (0, 1):
+                    cls_id = 0
+                elif orig_cls in (2, 3):
+                    cls_id = 1
+                else:
+                    cls_id = 2
+            else:
+                cls_id = orig_cls
 
-        ground_truths[fid].append([x, y, w, h, cls_id])
+            # Scale normalized YOLO xywh (512x512) to absolute x, y, w, h
+            w = wn * 512.0
+            h = hn * 512.0
+            x = (xc_n - wn / 2.0) * 512.0
+            y = (yc_n - hn / 2.0) * 512.0
+
+            ground_truths[fid].append([x, y, w, h, cls_id])
+            per_class_counts[cls_id] = per_class_counts.get(cls_id, 0) + 1
+
+    n_gt = sum(len(boxes) for boxes in ground_truths.values())
+
+    # Hard assertion: n_gt loaded must strictly match label file box count
+    assert n_gt == total_label_box_count, f"GT count mismatch! loaded n_gt={n_gt} vs file count={total_label_box_count}"
+
+    logger.info(
+        "Loaded ground truth for split '%s' (%s scheme): %d images, %d total boxes across classes %s",
+        split, scheme, len(ground_truths), n_gt, dict(sorted(per_class_counts.items())),
+    )
 
     return ground_truths, frame_to_patient
+

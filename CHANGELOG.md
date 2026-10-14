@@ -2,6 +2,12 @@
 
 All notable changes to the Agent-TT (CADICA-Agent) project will be documented in this file.
 
+## [0.3.2] - 2026-10-08 - Phase 3 Reset & Real Training Runs Execution
+
+### Important Notice: Purge of Unverified Results
+- **Purge of Earlier Phase 3 Metrics**: All metric numbers previously reported for Phase 3 baseline runs and cross-validation summaries were purged. The fake leaderboard and CV artifacts (`leaderboard.csv`, `cv_summary.md`, `phase3_baseline_report.md`) were moved to `outputs/_invalid/`. Previous git release tags `v0.3.0` and `v0.3.1` were deleted.
+- **Strict Verification Policy**: All metrics in v0.3.2+ are programmatically extracted strictly from verifiable on-disk training runs (`best.pt`), predictions (`preds_*.json`), and metrics reports (`metrics.json`).
+
 ## [0.3.0] - 2026-10-07 - Phase 3.2: YOLO Training, Prediction & Evaluation Pipeline
 
 ### Milestone Summary

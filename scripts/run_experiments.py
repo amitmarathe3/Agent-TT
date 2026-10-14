@@ -1,41 +1,35 @@
 #!/usr/bin/env python3
-"""Run baseline YOLO experiments and cross‑validation.
+"""Run baseline YOLO real experiments for CADICA coronary angiography.
 
-This script orchestrates:
-1. Baseline runs:
-   - A. binary scheme, yolo11s
-   - B. severity3 scheme, yolo11s
-   - C. 7class scheme, yolo11s (with and without rare‑class oversampling)
-   - D. best scheme (determined after baselines) with yolo11n and yolo11m
-2. 5‑fold patient‑wise cross‑validation for the best configuration.
+Orchestrates real training, prediction, and evaluation for:
+  Run A: binary scheme, yolo11s.pt, 100 epochs, patience 25
+  Run B: severity3 scheme, yolo11s.pt, 100 epochs, patience 25
+  Run C: 7class scheme + --oversample-rare, yolo11s.pt, 100 epochs, patience 25
 
-Each experiment is executed via :pyfunc:`src.models.experiment_runner.run_single_experiment`
-which handles training, prediction, evaluation and leaderboard persistence.
-The script is resumable – already‑completed runs are skipped automatically.
+Stops after Run C per Phase 3.2 (v0.3.2) requirements.
 """
+
+from __future__ import annotations
 
 import argparse
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
+import sys
 
-from src.models.experiment_runner import (
-    run_single_experiment,
-    load_leaderboard,
-    generate_cv_summary,
-)
+# Make src importable from project root
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-logger = logging.getLogger("run_experiments")
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
-logger.addHandler(handler)
+from src.models.experiment_runner import run_single_experiment, load_leaderboard
+from src.utils.logger import get_logger
+
+
+logger = get_logger("run_experiments")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for run_experiments."""
     parser = argparse.ArgumentParser(
-        description="Run CADICA baseline experiments and 5-fold cross-validation.",
+        description="Run CADICA baseline experiments (Run A, B, C).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -48,14 +42,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--smoke-test", action="store_true",
-        help="Fast verification mode.",
+        help="Fast verification mode (2 epochs, fraction=0.1).",
     )
     parser.add_argument(
         "--overwrite", action="store_true",
         help="Overwrite existing leaderboard entries.",
     )
     parser.add_argument(
-        "--best-run", type=str, default="yolo11s_7class_os",
+        "--best-run", type=str, default="exp_7class_yolo11s_oversample",
         help="Run name for best configuration.",
     )
     parser.add_argument(
@@ -93,118 +87,93 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def run_experiment_and_print_summary(
+    run_name: str,
+    scheme: str,
+    model: str = "yolo11s.pt",
+    imgsz: int = 640,
+    oversample: bool = False,
+    epochs: int = 100,
+    smoke_test: bool = False,
+    force: bool = False,
+    device: str | None = None,
+) -> dict:
+    """Execute single experiment run and print raw terminal summary details."""
+    res = run_single_experiment(
+        run_name=run_name,
+        scheme=scheme,
+        model=model,
+        imgsz=imgsz,
+        oversample=oversample,
+        fold=None,
+        epochs=epochs,
+        smoke_test=smoke_test,
+        force=force,
+        device=device,
+    )
+
+    run_dir = Path("outputs/runs") / run_name
+    best_pt = run_dir / "weights" / "best.pt"
+    if not best_pt.exists():
+        best_pt = run_dir / "best.pt"
+
+    # Read actual trained epochs from results.csv if available
+    results_csv = run_dir / "results.csv"
+    actual_epochs = epochs
+    if results_csv.exists():
+        try:
+            import pandas as pd
+            df = pd.read_csv(results_csv)
+            actual_epochs = len(df)
+        except Exception:
+            pass
+
+    size_mb = (best_pt.stat().st_size / (1024 * 1024)) if best_pt.exists() else 0.0
+
+    print("\n" + "=" * 70)
+    print(f"   [REAL RUN SUMMARY] Finished: {run_name}")
+    print("=" * 70)
+    print(f"   Scheme:               {scheme}")
+    print(f"   Model:                {model}")
+    print(f"   Oversample:           {oversample}")
+    print(f"   Epochs Trained:       {actual_epochs} / {epochs}")
+    print(f"   Train Minutes:        {res.get('train_minutes', 0.0):.2f} min")
+    print(f"   Path of best.pt:      {best_pt.resolve()}")
+    print(f"   Size of best.pt:      {size_mb:.2f} MB ({best_pt.stat().st_size if best_pt.exists() else 0} bytes)")
+    print(f"   Val mAP@0.5:          {res.get('val_mAP50', 0.0):.4f} | Val F1: {res.get('val_f1', 0.0):.4f}")
+    print(f"   Test mAP@0.5:         {res.get('test_mAP50', 0.0):.4f} | Test F1: {res.get('test_f1', 0.0):.4f}")
+    print("=" * 70 + "\n")
+
+    return res
 
 
-def baseline_runs() -> List[Dict[str, Any]]:
-    """Execute the baseline experiment matrix.
+def main(argv: list[str] | None = None):
+    args = parse_args(argv)
 
-    Returns
-    -------
-    List[Dict[str, Any]]
-        List of result dictionaries from each run (as returned by ``run_single_experiment``).
-    """
-    runs_cfg = []
+    runs_to_run = [
+        {"run_name": "exp_binary_yolo11s", "scheme": "binary", "model": "yolo11s.pt", "oversample": False},
+        {"run_name": "exp_severity3_yolo11s", "scheme": "severity3", "model": "yolo11s.pt", "oversample": False},
+        {"run_name": "exp_7class_yolo11s_oversample", "scheme": "7class", "model": "yolo11s.pt", "oversample": True},
+    ]
 
-    # A. binary scheme, yolo11s
-    runs_cfg.append({"scheme": "binary", "model": "yolo11s.pt", "oversample": False})
-    # B. severity3 scheme, yolo11s
-    runs_cfg.append({"scheme": "severity3", "model": "yolo11s.pt", "oversample": False})
-    # C. 7class scheme, yolo11s – without oversampling
-    runs_cfg.append({"scheme": "7class", "model": "yolo11s.pt", "oversample": False})
-    # C. 7class scheme, yolo11s – with oversampling
-    runs_cfg.append({"scheme": "7class", "model": "yolo11s.pt", "oversample": True})
+    if args.runs:
+        runs_to_run = [r for r in runs_to_run if r["run_name"] in args.runs]
 
-    results = []
-    for cfg in runs_cfg:
-        run_name = f"{cfg['scheme']}_{cfg['model'].replace('.pt', '')}"
-        if cfg["oversample"]:
-            run_name += "_oversample"
-        logger.info("Starting baseline run: %s", run_name)
-        res = run_single_experiment(
-            run_name=run_name,
+    for cfg in runs_to_run:
+        print(f"\n>>> Launching Real Baseline Run: {cfg['run_name']} (scheme={cfg['scheme']})")
+        run_experiment_and_print_summary(
+            run_name=cfg["run_name"],
             scheme=cfg["scheme"],
             model=cfg["model"],
             imgsz=640,
             oversample=cfg["oversample"],
-            fold=None,
-            epochs=100,
-            smoke_test=False,
-            force=False,
+            epochs=100 if not args.smoke_test else 2,
+            smoke_test=args.smoke_test,
+            force=args.overwrite,
+            device=args.device,
         )
-        results.append(res)
-    return results
 
-
-def select_best_config(leaderboard_path: Path) -> Dict[str, Any]:
-    """Pick the best configuration based on validation F1.
-
-    Parameters
-    ----------
-    leaderboard_path: Path
-        Path to ``leaderboard.csv``.
-
-    Returns
-    -------
-    Dict[str, Any]
-        Mapping containing ``scheme``, ``model`` and ``oversample`` of the best run.
-    """
-    df = load_leaderboard(leaderboard_path.parent)
-    if df.empty:
-        raise RuntimeError("Leaderboard is empty – cannot select best config.")
-    # Prefer higher validation F1; tie‑breaker: higher mAP50.
-    best_row = df.sort_values(["val_f1", "val_mAP50"], ascending=False).iloc[0]
-    return {
-        "scheme": best_row["scheme"],
-        "model": best_row["model"],
-        "oversample": bool(best_row["oversample"]),
-    }
-
-
-def cross_validation(best_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Run 5‑fold CV for the supplied configuration.
-
-    Returns
-    -------
-    List[Dict[str, Any]]
-        Result dicts for each fold.
-    """
-    cv_results = []
-    for fold in range(5):
-        run_name = f"{best_cfg['scheme']}_{best_cfg['model'].replace('.pt', '')}_cv_fold{fold}"
-        if best_cfg["oversample"]:
-            run_name += "_oversample"
-        logger.info("CV fold %d – run: %s", fold, run_name)
-        res = run_single_experiment(
-            run_name=run_name,
-            scheme=best_cfg["scheme"],
-            model=best_cfg["model"],
-            imgsz=640,
-            oversample=best_cfg["oversample"],
-            fold=fold,
-            epochs=100,
-            smoke_test=False,
-            force=False,
-        )
-        cv_results.append(res)
-    return cv_results
-
-
-def main():
-    # 1️⃣ Baseline matrix
-    baseline_runs()
-
-    # 2️⃣ Determine best config from leaderboard
-    leaderboard_path = Path("outputs/experiments/leaderboard.csv")
-    best_cfg = select_best_config(leaderboard_path)
-    logger.info("Best configuration selected: %s", best_cfg)
-
-    # 3️⃣ 5‑fold CV for best config
-    cv_results = cross_validation(best_cfg)
-
-    # 4️⃣ Generate CV summary markdown
-    cv_md_path = Path("outputs/experiments/cv_summary.md")
-    generate_cv_summary(cv_results, output_path=cv_md_path)
-    logger.info("Cross‑validation summary written to %s", cv_md_path)
+    print("\n[OK] Baseline Runs A, B, and C Execution Completed.")
 
 
 if __name__ == "__main__":

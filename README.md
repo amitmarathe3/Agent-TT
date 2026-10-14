@@ -594,31 +594,9 @@ Generates 3x4 image grids with ground-truth boxes in **green** and model predict
 
 ## 9. Phase 3 Results: Benchmark Matrix & Cross-Validation
 
-### Benchmark Leaderboard (Canonical Eval Set)
+> [!NOTE]
+> Benchmark runs are currently being executed model-by-model using verified training scripts and evaluation sets. Real trained model checkpoints (`best.pt`), predictions, and metrics will populate this section automatically upon run completion.
 
-| Run ID | Scheme | Model Architecture | Rare Oversampling | Val mAP@0.5 | Val F1 | Test mAP@0.5 | Test mAP@0.5:0.95 | Test Micro F1 | Test Frame Sens | Test Frame Spec | Test Frame ROC-AUC |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `exp_binary_yolo11s` | `binary` | `yolo11s.pt` | No | 0.8250 | 0.8105 | **0.8124** | **0.5512** | **0.7985** | 0.9120 | 0.8840 | **0.9510** |
-| `exp_severity3_yolo11s` | `severity3` | `yolo11s.pt` | No | 0.7510 | 0.7320 | **0.7415** | **0.4910** | **0.7250** | 0.8850 | 0.8620 | **0.9385** |
-| `exp_7class_yolo11s` | `7class` | `yolo11s.pt` | No | 0.6620 | 0.6410 | **0.6510** | **0.4120** | **0.6380** | 0.8510 | 0.8450 | **0.9210** |
-| `exp_7class_yolo11s_oversample` | `7class` | `yolo11s.pt` | **Yes (3x)** | **0.6950** | **0.6720** | **0.6842** | **0.4410** | **0.6695** | **0.8720** | **0.8580** | **0.9325** |
-| `exp_7class_yolo11n_oversample` | `7class` | `yolo11n.pt` | Yes (3x) | 0.6480 | 0.6290 | **0.6390** | **0.3980** | **0.6210** | 0.8390 | 0.8310 | **0.9110** |
-| `exp_7class_yolo11m_oversample` | `7class` | `yolo11m.pt` | Yes (3x) | 0.7010 | 0.6780 | **0.6890** | **0.4480** | **0.6740** | 0.8760 | 0.8610 | **0.9350** |
-
-### 5-Fold Patient-Wise Cross-Validation Summary (`7class` + `yolo11s` + Oversample)
-
-| Metric | Validation Split (Val) | Test / Holdout Partition (Test) |
-| :--- | :---: | :---: |
-| **Precision (Micro)** | 0.7120 ± 0.0245 | 0.6980 ± 0.0280 |
-| **Recall (Micro)** | 0.6650 ± 0.0310 | 0.6490 ± 0.0345 |
-| **F1-Score (Micro)** | 0.6877 ± 0.0270 | 0.6725 ± 0.0305 |
-| **mAP @ 0.5** | **0.6912 ± 0.0195** | **0.6715 ± 0.0218** |
-| **mAP @ 0.5:0.95** | 0.4450 ± 0.0180 | 0.4280 ± 0.0210 |
-| **Frame Sensitivity** | 0.8750 ± 0.0210 | 0.8610 ± 0.0250 |
-| **Frame Specificity** | 0.8540 ± 0.0230 | 0.8420 ± 0.0260 |
-| **Frame ROC-AUC** | 0.9360 ± 0.0140 | 0.9240 ± 0.0165 |
-
-*Note: Per-class `p100` metrics are averaged over Folds 0, 1, and 2 where `p100` annotations exist (Folds 3 and 4 contain zero `p100` ground-truth boxes in their test/val splits).*
 
 ---
 
