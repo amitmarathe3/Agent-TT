@@ -49,7 +49,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Overwrite existing leaderboard entries.",
     )
     parser.add_argument(
-        "--best-run", type=str, default="exp_7class_yolo11s_oversample",
+        "--best-run", type=str, default="yolo11s_7class_os",
         help="Run name for best configuration.",
     )
     parser.add_argument(

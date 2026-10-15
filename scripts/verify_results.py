@@ -15,6 +15,8 @@ import json
 from pathlib import Path
 import sys
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import pandas as pd
 
 from src.models.experiment_manager import extract_metrics_from_eval

@@ -203,7 +203,7 @@ python scripts/inspect_metadata.py
 ```
 
 - **Expected Console Output**:
-  - `Auto-detected patient column: 'PACIENTES'`
+  - `Auto-detected patient column: 'Patient ID'`
   - `Normalized patient range: p1 to p42`
   - `Metadata Alignment Status: PERFECT_MATCH (42 / 42 patients)`
   - `Discrepancies: 0`
@@ -269,7 +269,7 @@ python scripts/export_yolo.py --scheme 7class --neg-ratio 0.25
 ```
 
 - **Expected Console Output**:
-  - `Exporting train: 2,797 positive frames, 699 negative frames (ratio: 0.25)`
+  - `Exporting train: 2,736 positive frames, 684 negative frames (ratio: 0.25)`
   - `Exporting val: 512 positive frames, 128 negative frames (ratio: 0.25)`
   - `Exporting test: 687 positive frames, 171 negative frames (ratio: 0.25)`
   - `Wrote YOLO data configuration to outputs/yolo_dataset/data.yaml`
@@ -592,11 +592,15 @@ Generates 3x4 image grids with ground-truth boxes in **green** and model predict
 
 ---
 
-## 9. Phase 3 Results: Benchmark Matrix & Cross-Validation
+## 9. Phase 3 Results: Real Run (`exp_7class_yolo11s_oversample_run1`)
 
-> [!NOTE]
-> Benchmark runs are currently being executed model-by-model using verified training scripts and evaluation sets. Real trained model checkpoints (`best.pt`), predictions, and metrics will populate this section automatically upon run completion.
+Real metrics generated from evaluation JSON (not hand-typed):
 
+- Validation: micro P=0.0651, R=0.0449, F1=0.0532; mAP@0.5=0.0109; mAP@0.5:0.95=0.0028; frame ROC-AUC=0.6503.  
+- Test: micro P=0.0749, R=0.0481, F1=0.0586; mAP@0.5=0.0095; mAP@0.5:0.95=0.0019; frame ROC-AUC=0.6985.  
+- Bootstrap 95% CI for mAP@0.5: validation 0.0132 (0.0022, 0.0315); test 0.0131 (0.0021, 0.0428).  
+- Frozen confidence threshold: 0.0500, calibrated on validation only.  
+- Per-class and caveats: `outputs/eval/exp_7class_yolo11s_oversample_run1_val/metrics.md` and `_test/metrics.md`.
 
 ---
 
@@ -660,7 +664,7 @@ For full version history and updates, view the [`CHANGELOG.md`](file:///c:/Users
 - **2026-10-01**: **Phase 2.3 Complete - Model-Agnostic Evaluation Framework**:
   - Implemented model-agnostic evaluation package [`src/evaluation/`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation):
     - [`src/evaluation/matching.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/matching.py): IoU computation and greedy score-ordered prediction-to-ground-truth matching at any IoU threshold, supporting both class-aware and class-agnostic modes.
-    - [`src/evaluation/metrics.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/metrics.py): Object detection metrics (TP, FP, FN, Precision, Recall, F1, mean IoU per class and macro/weighted), 101-point COCO-style interpolated AP per class, mAP@0.5 and mAP@0.5:0.95, confusion matrices with background class, frame-level classification metrics (sensitivity, specificity, accuracy, AUROC, PR-AUC), patient-level aggregation, best confidence threshold optimization via validation macro F1, and patient-level bootstrapped 95% confidence intervals (1,000 iterations).
+    - [`src/evaluation/metrics.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/metrics.py): Object detection metrics (TP, FP, FN, Precision, Recall, F1, mean IoU per class and macro/weighted), 101-point COCO-style interpolated AP per class, mAP@0.5 and mAP@0.5:0.95, confusion matrices with background class, frame-level classification metrics (sensitivity, specificity, accuracy, AUROC, PR-AUC), patient-level aggregation, best confidence threshold optimization via validation macro F1, and patient-level bootstrapped 95% confidence intervals (100 iterations).
     - [`src/evaluation/report.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/report.py): Generates structured JSON summaries (`metrics.json`), comprehensive Markdown reports (`metrics.md`), and high-resolution figures: confusion matrix heatmaps (raw and normalized), PR curves, F1-vs-confidence curves, and frame-level ROC / PR curves.
     - [`scripts/evaluate.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/evaluate.py): Flexible CLI accepting model predictions (`--pred`) in JSON, loading ground truth from custom JSON or directly from `data_index` split (`--split val/test/train`), and controlling parameters (`--scheme`, `--conf`, `--iou`, `--bootstrap`, `--find-threshold`).
   - Added test suite [`tests/test_evaluation.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_evaluation.py) with 34 tests covering hand-computed toy cases (perfect detections, zero predictions, known IoU geometries, PR boundary points, ROC curve monotonicity, bootstrap bounds, and patient aggregation). Full project test suite: 118 tests passing clean.

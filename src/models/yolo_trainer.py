@@ -57,18 +57,15 @@ def get_safe_device(requested_device: str | None = None) -> tuple[str, str]:
         if dev.lower() == "cpu":
             return "cpu", "CPU"
         name = f"Custom ({dev})"
-        if torch.cuda.is_available():
-            try:
-                idx = int(dev) if dev.isdigit() else 0
-                name = torch.cuda.get_device_name(idx)
-            except Exception:
-                pass
         return dev, name
 
-    if torch.cuda.is_available():
-        gpu_name = torch.cuda.get_device_name(0)
-        logger.info("CUDA detected: %s (Device 0)", gpu_name)
-        return "0", f"CUDA:0 ({gpu_name})"
+    # Never query CUDA device names; that can segfault on broken wheels.
+    if torch.version.cuda is not None and os.environ.get("USE_CPU") != "1":
+        logger.info("CUDA wheel detected (Device 0)")
+        return "0", "CUDA:0"
+
+    logger.info("Using CPU.")
+    return "cpu", "CPU"
 
     logger.info("CUDA not available. Using CPU.")
     return "cpu", "CPU"

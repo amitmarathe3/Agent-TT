@@ -199,3 +199,14 @@ Phase 1 (Data Ingestion, Verification, Indexing, and Exploratory Data Analysis) 
 
 ## [0.1.0] - 2026-09-29
 - Project repository initialization and baseline guidelines acknowledgement.
+
+## [0.3.3] - 2026-10-15 - Phase 3 Real Evaluation (run1)
+
+### Added
+- Real inference/evaluation artifacts for exp_7class_yolo11s_oversample_run1 in outputs/eval/..._val and _test.
+- Per-class summaries and caveats appended to metrics.md.
+- Leaderboard rebuilt from metrics.json with only the existing real run.
+
+### Notes
+- Bootstrap used 100 iterations.
+- Ultralytics cross-check warning remains: custom mAP@0.5 differs from native by >0.02.

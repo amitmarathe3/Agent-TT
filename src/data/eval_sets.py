@@ -103,6 +103,15 @@ def load_eval_ground_truth(
     total_label_box_count = 0
     per_class_counts: dict[int, int] = {}
 
+    if full_frames:
+        warnings.warn(
+            "--full-frames selected: evaluating against all raw frames may treat "
+            "unannotated frames from lesion videos as false negatives; prefer the "
+            "canonical evaluation set by default.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     txt_files = sorted(lbl_dir.glob("*.txt"))
     for txt_file in txt_files:
         fid = txt_file.stem

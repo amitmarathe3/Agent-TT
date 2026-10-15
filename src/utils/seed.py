@@ -18,10 +18,13 @@ def set_seed(seed: int = 42) -> None:
     try:
         import torch
         torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed(seed)
+        # Seed CUDA if present; never call is_available() (it can segfault on
+        # some Windows/Python wheels). The manual calls are safe on CPU-only.
+        try:
             torch.cuda.manual_seed_all(seed)
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
+        except Exception:
+            pass
     except ImportError:
         pass
