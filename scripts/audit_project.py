@@ -21,7 +21,8 @@ except Exception as exc:  # pragma: no cover
     print(f"pandas is required for the audit: {exc}")
     sys.exit(2)
 
-ROOT = Path(__file__).resolve().parent.parent
+# AUDIT_ROOT lets tests point the audit at a temporary project tree.
+ROOT = Path(os.environ.get("AUDIT_ROOT", Path(__file__).resolve().parent.parent)).resolve()
 PY = r"C:\Users\HP\AppData\Local\Programs\Python\Python314\python.exe"
 
 # 7-class scheme used by the YOLO exporter (raw constant; not imported from src/).
@@ -242,6 +243,34 @@ def check2() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Check 2b: every exp_ run folder has run_config.json + eval folder
+# ---------------------------------------------------------------------------
+def check2b() -> None:
+    runs_dir = ROOT / "outputs" / "runs"
+    eval_dir = ROOT / "outputs" / "eval"
+    if not runs_dir.exists():
+        add("2b exp_ run completeness", "WARN", "no outputs/runs")
+        return
+    bad = []
+    exp_dirs = sorted(d for d in runs_dir.iterdir() if d.is_dir() and d.name.startswith("exp_"))
+    if not exp_dirs:
+        add("2b exp_ run completeness", "PASS", "no exp_ run folders present")
+        return
+    for d in exp_dirs:
+        if not (d / "run_config.json").exists():
+            bad.append(f"{d.name}: missing run_config.json")
+        has_eval = eval_dir.exists() and any(
+            e.is_dir() and e.name.startswith(d.name + "_") for e in eval_dir.iterdir()
+        )
+        if not has_eval:
+            bad.append(f"{d.name}: no eval folder in outputs/eval")
+    if bad:
+        add("2b exp_ run completeness", "FAIL", "; ".join(bad))
+    else:
+        add("2b exp_ run completeness", "PASS", f"{len(exp_dirs)} exp_ run(s) complete")
+
+
+# ---------------------------------------------------------------------------
 # Check 3: leaderboard artifacts + values match metrics.json
 # ---------------------------------------------------------------------------
 LB_MAP = {
@@ -281,8 +310,28 @@ def check3() -> None:
         mv = ROOT / "outputs" / "eval" / f"{run}_val" / "metrics.json"
         mt = ROOT / "outputs" / "eval" / f"{run}_test" / "metrics.json"
         files_ok = best_pt and preds_v and preds_t and mv.exists() and mt.exists()
+
+        # A row only "declares NOT RUN" if its label says so or it carries no
+        # numeric metric values. Otherwise it claims to be a completed run.
+        metric_vals = [row[c] for c in LB_MAP if c in row and not pd.isna(row[c])]
+        claims_run = ("not run" not in run.lower()) and bool(metric_vals)
+
         if not files_ok:
-            notrun.append(run)
+            if claims_run:
+                missing = []
+                if not best_pt:
+                    missing.append("best.pt")
+                if not preds_v:
+                    missing.append("preds_val.json")
+                if not preds_t:
+                    missing.append("preds_test.json")
+                if not mv.exists():
+                    missing.append(f"{run}_val/metrics.json")
+                if not mt.exists():
+                    missing.append(f"{run}_test/metrics.json")
+                bad.append(f"{run}: missing {', '.join(missing)}")
+            else:
+                notrun.append(run)
             continue
         m = {"val": json.loads(mv.read_text(encoding="utf-8")),
              "test": json.loads(mt.read_text(encoding="utf-8"))}
@@ -342,25 +391,31 @@ def check4() -> None:
 # ---------------------------------------------------------------------------
 # Check 5: README/CHANGELOG number provenance + version claims
 # ---------------------------------------------------------------------------
+unmatched_numbers: list[str] = []
+
+
 def check5() -> None:
+    global unmatched_numbers
+    unmatched_numbers = []
     known = known_values()
     num_re = re.compile(r"(?<![\d.])(\d+\.\d{3,})(?![\d.])")
-    unmatched = []
     for name in ("README.md", "CHANGELOG.md"):
         p = ROOT / name
         if not p.exists():
             continue
-        txt = p.read_text(encoding="utf-8")
-        for tok in num_re.findall(txt):
-            try:
-                v = round(float(tok), 4)
-            except Exception:
-                continue
-            if v not in known:
-                unmatched.append(f"{name}:{tok}")
-    if unmatched:
+        for lineno, line in enumerate(
+            p.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            for tok in num_re.findall(line):
+                try:
+                    v = round(float(tok), 4)
+                except Exception:
+                    continue
+                if v not in known:
+                    unmatched_numbers.append(f"{name}:{lineno}: {tok}")
+    if unmatched_numbers:
         add("5 doc numbers in metrics/data_index", "WARN",
-            f"{len(unmatched)} unmatched -> {unmatched[:12]}")
+            f"{len(unmatched_numbers)} unmatched (full list in reports/audit.md)")
     else:
         add("5 doc numbers in metrics/data_index", "PASS", "all 3+ decimal numbers found")
 
@@ -457,7 +512,8 @@ def check8() -> None:
 
 
 def main() -> int:
-    for fn in (check1, check2, check3, check4, check5, check6, check7, check8):
+    rows.clear()
+    for fn in (check1, check2, check2b, check3, check4, check5, check6, check7, check8):
         try:
             fn()
         except Exception as exc:
@@ -484,6 +540,11 @@ def main() -> int:
         md.append(f"| {check} | {status} | {d} |")
     md.append("")
     md.append(f"SUMMARY: {len(rows)} checks | FAIL={len(fails)} WARN={len(warns)}")
+    if unmatched_numbers:
+        md.append("")
+        md.append("## Unmatched README/CHANGELOG decimals (3+ places)")
+        md.append("")
+        md.extend(unmatched_numbers)
     (rep / "audit.md").write_text("\n".join(md), encoding="utf-8")
 
     return 1 if fails else 0
