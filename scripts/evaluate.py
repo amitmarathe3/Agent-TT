@@ -349,6 +349,8 @@ def main(argv: list[str] | None = None) -> None:
             predictions, ground_truths, class_ids, frame_to_patient,
             class_names_map, iou_threshold=args.iou, conf_threshold=args.conf,
             n_bootstrap=args.n_bootstrap,
+            split=args.split,
+            yolo_dir=Path(args.yolo_dir),
         )
         all_metrics["bootstrap"] = boot
         logger.info("Bootstrap macro F1: %.4f [%.4f, %.4f]",

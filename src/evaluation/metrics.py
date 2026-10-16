@@ -824,11 +824,17 @@ def bootstrap_confidence_intervals(
     n_bootstrap: int = 1000,
     ci_level: float = 0.95,
     seed: int = 42,
+    split: str | None = None,
+    yolo_dir: Path | str = "outputs/yolo_dataset",
 ) -> dict[str, Any]:
     """Bootstrap 95% CIs by patient resampling for F1, mAP@0.5, sensitivity.
 
     Each bootstrap sample draws patients with replacement. Frames belonging to
     sampled patients form the bootstrap evaluation set.
+
+    The bootstrap universe is the CANONICAL eval set for `split` (the exact
+    frames the point estimates were computed on), never the whole
+    frames_index.csv. See the block comment below for why that matters.
 
     Args:
         predictions: Dict frame_id -> preds.
@@ -841,51 +847,227 @@ def bootstrap_confidence_intervals(
         n_bootstrap: Number of bootstrap iterations.
         ci_level: Confidence interval level (default 0.95).
         seed: Random seed.
+        split: Canonical split name ('val'/'test'). Required for real
+            evaluation; when None (synthetic unit tests only) the universe
+            falls back to set(predictions) | set(ground_truths).
+        yolo_dir: Exported YOLO dataset root used to resolve the canonical set.
 
     Returns:
-        Dict with point estimates and CI bounds for macro_f1, mAP_50, sensitivity.
+        Dict with `universe` (split / n_frames / n_patients), `full_sample`
+        (point estimates over the full universe, one draw each) and CI bounds
+        for macro_f1, mAP_50, sensitivity, frame_auc.
+
+    Performance:
+        Per-image matches are frame-local (a frame's TP/FP/FN and score-vs-TP
+        flags do not depend on which other frames are in the bootstrap set), so
+        they are computed once and cached. Each iteration only aggregates the
+        cached arrays over the resampled patients (multiplicity-weighted),
+        making 500 iterations run in seconds instead of re-running matching.
     """
     rng = np.random.RandomState(seed)
 
-    # Group frames by patient
+    # ------------------------------------------------------------------
+    # Bootstrap universe: the CANONICAL eval frames for this split, grouped
+    # by patient.
+    #
+    # This must NOT be built from frame_to_patient (which is loaded from
+    # frames_index.csv and covers the whole dataset: 31,499 frames / 42
+    # patients). 36 of those patients have no eval frames at all; their
+    # thousands of empty frames become score-0 negatives that are inert for
+    # mAP/F1 but inflate frame ROC-AUC from 0.65 to ~0.99 and corrupt every
+    # CI by resampling a patient universe the model was never evaluated on.
+    # ------------------------------------------------------------------
+    if split in ("val", "test"):
+        from src.data.eval_sets import (  # lazy: avoid heavy src.data import
+            EXPECTED_EVAL_UNIVERSE,
+            get_canonical_eval_frame_ids,
+        )
+
+        frame_ids: list[str] = list(get_canonical_eval_frame_ids(split, yolo_dir=yolo_dir))
+    else:
+        # 'train'/'all'/synthetic unit tests: no canonical eval contract here.
+        EXPECTED_EVAL_UNIVERSE: dict[str, tuple[int, int]] = {}
+        frame_ids = sorted(set(predictions) | set(ground_truths))
+
     patient_to_frames: dict[str, list[str]] = {}
-    for frame_id, patient in frame_to_patient.items():
-        patient_to_frames.setdefault(patient, []).append(frame_id)
+    for fid in frame_ids:
+        pid = frame_to_patient.get(fid)
+        if pid is None:
+            pid = fid.split("_")[0]  # same fallback as load_eval_ground_truth
+        patient_to_frames.setdefault(pid, []).append(fid)
 
     all_patients = sorted(patient_to_frames.keys())
     n_patients = len(all_patients)
 
+    if split in EXPECTED_EVAL_UNIVERSE:
+        exp_frames, exp_patients = EXPECTED_EVAL_UNIVERSE[split]
+        assert len(frame_ids) == exp_frames, (
+            f"Bootstrap universe for split='{split}' must be the canonical "
+            f"{exp_frames} eval frames, got {len(frame_ids)}"
+        )
+        assert n_patients == exp_patients, (
+            f"Bootstrap universe for split='{split}' must span "
+            f"{exp_patients} patients, got {n_patients}"
+        )
+
     if n_patients < 2:
         return {"error": "Not enough patients for bootstrap"}
+
+    # ------------------------------------------------------------------
+    # One-time per-frame cache of matches (frame-local, so reusable).
+    # AP matching uses IoU=0.5 (matches compute_map); detection counts use
+    # the caller's iou_threshold (matches compute_detection_metrics).
+    # ------------------------------------------------------------------
+    AP_IOU = 0.5
+
+    det_cache: dict[str, dict[int, tuple[int, int, int]]] = {}
+    ap_scores: dict[str, dict[int, np.ndarray]] = {}
+    ap_tp: dict[str, dict[int, np.ndarray]] = {}
+    ap_ngt: dict[str, dict[int, int]] = {}
+    frame_score: dict[str, float] = {}
+    frame_label: dict[str, int] = {}
+
+    for fid in frame_ids:
+        preds = predictions.get(fid, [])
+        gts = ground_truths.get(fid, [])
+
+        # Frame-level (ROC AUC input): max score vs has-GT label.
+        frame_score[fid] = max((float(p[4]) for p in preds), default=0.0)
+        frame_label[fid] = 1 if len(gts) > 0 else 0
+
+        # Detection counts at conf_threshold (class-aware matching).
+        filtered = [p for p in preds if float(p[4]) >= conf_threshold]
+        res = match_predictions(filtered, gts, iou_threshold=iou_threshold, class_agnostic=False)
+        cnt = {c: [0, 0, 0] for c in class_ids}
+        for idx in res.tp_pred_indices:
+            c = int(filtered[idx][5])
+            if c in cnt:
+                cnt[c][0] += 1
+        for idx in res.fp_pred_indices:
+            c = int(filtered[idx][5])
+            if c in cnt:
+                cnt[c][1] += 1
+        for gt_idx in res.fn_gt_indices:
+            c = int(gts[gt_idx][4])
+            if c in cnt:
+                cnt[c][2] += 1
+        det_cache[fid] = {c: (cnt[c][0], cnt[c][1], cnt[c][2]) for c in class_ids}
+
+        # AP inputs per class (score-ordered, class-agnostic within class,
+        # exactly as compute_class_ap does).
+        sc: dict[int, np.ndarray] = {}
+        tf: dict[int, np.ndarray] = {}
+        ng: dict[int, int] = {}
+        for c in class_ids:
+            cp = [p for p in preds if int(p[5]) == c]
+            cg = [g for g in gts if int(g[4]) == c]
+            ng[c] = len(cg)
+            if len(cp) == 0:
+                sc[c] = np.empty(0, dtype=np.float64)
+                tf[c] = np.empty(0, dtype=bool)
+                continue
+            if len(cg) == 0:
+                sc[c] = np.array([float(p[4]) for p in cp], dtype=np.float64)
+                tf[c] = np.zeros(len(cp), dtype=bool)
+                continue
+            r = match_predictions(cp, cg, iou_threshold=AP_IOU, class_agnostic=True)
+            tp_set = set(r.tp_pred_indices)
+            sc[c] = np.array([float(p[4]) for p in cp], dtype=np.float64)
+            tf[c] = np.array([i in tp_set for i in range(len(cp))], dtype=bool)
+        ap_scores[fid] = sc
+        ap_tp[fid] = tf
+        ap_ngt[fid] = ng
 
     boot_macro_f1: list[float] = []
     boot_map50: list[float] = []
     boot_sensitivity: list[float] = []
+    boot_frame_auc: list[float] = []
+
+    def _aggregate(mult: dict[str, int]) -> tuple[float, float, float, float]:
+        """Aggregate cached stats over a frame-multiplicity map.
+
+        Returns (macro_f1, mAP_50, sensitivity, frame_auc). Shared by the
+        full-sample point estimate and every bootstrap draw, so all four
+        metrics are computed over exactly the same universe.
+        """
+        # ---- Detection F1 (micro / macro / sensitivity) ----
+        tp = {c: 0 for c in class_ids}
+        fp = {c: 0 for c in class_ids}
+        fn = {c: 0 for c in class_ids}
+        for fid, m in mult.items():
+            dc = det_cache[fid]
+            for c in class_ids:
+                t, p_, n_ = dc[c]
+                tp[c] += m * t
+                fp[c] += m * p_
+                fn[c] += m * n_
+
+        per_cls_f1: list[float] = []
+        for c in class_ids:
+            pr = tp[c] / (tp[c] + fp[c] + 1e-9) if (tp[c] + fp[c]) > 0 else 0.0
+            rc = tp[c] / (tp[c] + fn[c] + 1e-9) if (tp[c] + fn[c]) > 0 else 0.0
+            if (tp[c] + fn[c]) > 0:  # only classes with GT support in sample
+                per_cls_f1.append(2 * pr * rc / (pr + rc + 1e-9) if (pr + rc) > 0 else 0.0)
+        macro_f1 = float(np.mean(per_cls_f1)) if per_cls_f1 else 0.0
+
+        atp, afp, afn = sum(tp.values()), sum(fp.values()), sum(fn.values())
+        micro_r = atp / (atp + afn + 1e-9) if (atp + afn) > 0 else 0.0
+
+        # ---- mAP@0.5 (mean over ALL class_ids; absent class -> 0.0) ----
+        aps: list[float] = []
+        for c in class_ids:
+            parts_s: list[np.ndarray] = []
+            parts_t: list[np.ndarray] = []
+            n_gt = 0
+            for fid, m in mult.items():
+                s = ap_scores[fid][c]
+                t = ap_tp[fid][c]
+                n_gt += m * ap_ngt[fid][c]
+                if s.size:
+                    parts_s.append(s if m == 1 else np.repeat(s, m))
+                    parts_t.append(t if m == 1 else np.repeat(t, m))
+            if n_gt == 0 or not parts_s:
+                aps.append(0.0)
+                continue
+            scores = np.concatenate(parts_s)
+            tpf = np.concatenate(parts_t)
+            if not tpf.any():
+                aps.append(0.0)
+                continue
+            rec, prec = build_pr_curve(scores, tpf, n_gt)
+            aps.append(_interpolate_ap_101(rec, prec))
+        map50 = float(np.mean(aps)) if class_ids else 0.0
+
+        # ---- Frame ROC-AUC ----
+        fs = np.array([frame_score[f] for f in mult], dtype=np.float64)
+        fl = np.array([frame_label[f] for f in mult], dtype=np.int32)
+        auc, _, _ = _compute_roc(fs, fl)
+
+        return macro_f1, map50, micro_r, float(auc)
+
+    # ------------------------------------------------------------------
+    # Full-sample point estimate (every frame exactly once). This is the
+    # same universe the bootstrap resamples from, so it must equal the
+    # metrics.json values (macro F1 / mAP@0.5 / sensitivity / frame AUC).
+    # ------------------------------------------------------------------
+    full_mult = {fid: 1 for fid in frame_ids}
+    full_macro_f1, full_map50, full_sensitivity, full_frame_auc = _aggregate(full_mult)
 
     for _ in range(n_bootstrap):
         sampled_patients = rng.choice(all_patients, size=n_patients, replace=True)
-        boot_preds: dict[str, list[list[float]]] = {}
-        boot_gts: dict[str, list[list[float]]] = {}
 
+        # Frame multiplicity: a patient drawn k times contributes its frames k
+        # times (true with-replacement patient bootstrap).
+        mult: dict[str, int] = {}
         for pat in sampled_patients:
-            for frame_id in patient_to_frames.get(pat, []):
-                # Suffix to create unique keys for duplicate patients
-                key = f"{frame_id}__{pat}"
-                boot_preds[key] = predictions.get(frame_id, [])
-                boot_gts[key] = ground_truths.get(frame_id, [])
+            for fid in patient_to_frames.get(pat, []):
+                mult[fid] = mult.get(fid, 0) + 1
 
-        # Detection metrics
-        det = compute_detection_metrics(
-            boot_preds, boot_gts, class_ids, class_names,
-            iou_threshold=iou_threshold, conf_threshold=conf_threshold,
-        )
-        boot_macro_f1.append(det["macro"]["f1"])
-        boot_sensitivity.append(det["micro"]["recall"])
-
-        # mAP@0.5
-        ap_per_cls = compute_map(boot_preds, boot_gts, class_ids, iou_threshold=0.5)
-        map50 = float(np.mean(list(ap_per_cls.values()))) if class_ids else 0.0
-        boot_map50.append(map50)
+        v_macro_f1, v_map50, v_sens, v_auc = _aggregate(mult)
+        boot_macro_f1.append(v_macro_f1)
+        boot_map50.append(v_map50)
+        boot_sensitivity.append(v_sens)
+        boot_frame_auc.append(v_auc)
 
     alpha = (1.0 - ci_level) / 2.0
 
@@ -900,7 +1082,19 @@ def bootstrap_confidence_intervals(
     return {
         "n_bootstrap": n_bootstrap,
         "ci_level": ci_level,
+        "universe": {
+            "split": split,
+            "n_frames": len(frame_ids),
+            "n_patients": n_patients,
+        },
+        "full_sample": {
+            "macro_f1": round(full_macro_f1, 6),
+            "mAP_50": round(full_map50, 6),
+            "sensitivity": round(full_sensitivity, 6),
+            "frame_auc": round(full_frame_auc, 6),
+        },
         "macro_f1": _ci(boot_macro_f1),
         "mAP_50": _ci(boot_map50),
         "sensitivity": _ci(boot_sensitivity),
+        "frame_auc": _ci(boot_frame_auc) if boot_frame_auc else None,
     }

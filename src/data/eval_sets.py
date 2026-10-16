@@ -22,6 +22,16 @@ from src.utils.logger import get_logger
 
 logger = get_logger("eval_sets")
 
+# Hard invariants for the canonical evaluation sets (patient-wise 6/6 split of
+# the 12 eval patients). These are the ONLY frames the Phase 3 evaluation and
+# bootstrap are allowed to see: the bootstrap universe must never be built from
+# frames_index.csv (31,499 frames / 42 patients) because that admits 36 patients
+# with no eval frames and inflates frame AUC from ~0.65 to ~0.99.
+EXPECTED_EVAL_UNIVERSE: dict[str, tuple[int, int]] = {
+    "val": (722, 6),
+    "test": (852, 6),
+}
+
 
 def get_canonical_eval_frame_ids(
     split: str,

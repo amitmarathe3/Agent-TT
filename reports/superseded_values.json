@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "Documented historical / superseded / purged numeric values.",
+    "scripts/audit_project.py check 5 loads this file so that values which are",
+    "INTENTIONALLY quoted as wrong, old, or removed are not flagged as unmatched.",
+    "Every entry must state why it is retained and what replaced it.",
+    "Nothing here may ever be presented as a current result."
+  ],
+  "purged_fake_results": {
+    "reason": "Fabricated Phase 3 baseline / benchmark-matrix / 5-fold CV numbers, removed on 2026-10-15. Artifacts moved to outputs/_invalid/. Quoted ONLY in the README purge notice.",
+    "artifacts": "outputs/_invalid/",
+    "values": [0.8124, 0.7415, 0.6510, 0.6842, 0.6390, 0.6890, 0.6715, 0.0218, 0.9240, 0.0165]
+  },
+  "pre_fix_metric_artifacts": {
+    "reason": "Values produced by evaluator bugs fixed in v0.2.1 (101-point AP envelope off-by-1/101 for zero-TP classes; frame PR-AUC endpoint interpolation). Retained as historical bug descriptions only.",
+    "replaced_by": "src/evaluation/metrics.py (precision-envelope AP, step-integral PR-AUC)",
+    "values": [0.0099, 0.6004]
+  },
+  "corrected_documented_values": {
+    "reason": "Values the docs quote ONLY as the wrong/old figure being corrected, so the correction can be read as evidence. Never to be presented as current.",
+    "replaced_by": "data_index/norm_stats.json (Mean 0.5076, Std 0.1395)",
+    "values": [0.5066, 0.1385]
+  },
+  "superseded_bootstrap_cis": {
+    "reason": "Bootstrap 95% CIs computed over the WRONG patient universe (frames_index.csv: 31,499 frames / 42 patients) instead of the canonical eval set (722 frames / 6 patients for val, 852 / 6 for test). Superseded on 2026-10-16.",
+    "source": "outputs/logs/old_metrics_val.json, outputs/logs/old_metrics_test.json",
+    "replaced_by": "outputs/eval/exp_7class_yolo11s_oversample_run1_{val,test}/metrics.json",
+    "values": [0.0374, 0.0099, 0.1028, 0.0022, 0.0315, 0.0108, 0.1457, 0.0510, 0.0132, 0.0367, 0.0159, 0.0721, 0.0021, 0.0428, 0.0145, 0.0470, 0.0131]
+  }
+}

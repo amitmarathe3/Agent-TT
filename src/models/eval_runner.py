@@ -88,6 +88,7 @@ def evaluate_split(
     bootstrap: bool = True,
     n_bootstrap: int = 500,
     ultralytics_map50: float | None = None,
+    yolo_dir: Path | str = "outputs/yolo_dataset",
 ) -> dict[str, Any]:
     """Execute full Phase 2 evaluation report generation for a single split.
 
@@ -197,6 +198,8 @@ def evaluate_split(
             predictions, ground_truths, class_ids, frame_to_patient,
             class_names_map, iou_threshold=iou_threshold, conf_threshold=conf_threshold,
             n_bootstrap=n_bootstrap,
+            split=split,
+            yolo_dir=yolo_dir,
         )
         all_metrics["bootstrap"] = boot
 
@@ -317,6 +320,7 @@ def run_pipeline_evaluation(
         bootstrap=bootstrap,
         n_bootstrap=n_bootstrap,
         ultralytics_map50=ultralytics_map50,
+        yolo_dir=yolo_dir,
     )
 
     # 7. Evaluate TEST split if present
@@ -352,6 +356,7 @@ def run_pipeline_evaluation(
             bootstrap=bootstrap,
             n_bootstrap=n_bootstrap,
             ultralytics_map50=None,
+            yolo_dir=yolo_dir,
         )
 
     return {

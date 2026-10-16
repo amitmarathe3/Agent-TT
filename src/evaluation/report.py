@@ -363,11 +363,23 @@ def generate_markdown_report(
     if "bootstrap" in all_metrics:
         boot = all_metrics["bootstrap"]
         lines.append(f"## Bootstrap {int(boot.get('ci_level', 0.95) * 100)}% Confidence Intervals (n={boot.get('n_bootstrap', '?')})\n")
-        lines.append("| Metric | Mean | Lower | Upper |")
-        lines.append("|---|---|---|---|")
-        for k in ["macro_f1", "mAP_50", "sensitivity"]:
-            ci = boot.get(k, {})
-            lines.append(f"| {k} | {_fmt(ci.get('mean', '-'))} | {_fmt(ci.get('lower', '-'))} | {_fmt(ci.get('upper', '-'))} |")
+        uni = boot.get("universe") or {}
+        if uni:
+            lines.append(
+                f"- **Universe**: split=`{uni.get('split', '-')}` "
+                f"{uni.get('n_frames', '?')} frames / {uni.get('n_patients', '?')} patients "
+                f"(canonical eval set, NOT frames_index.csv)\n"
+            )
+        full = boot.get("full_sample") or {}
+        lines.append("| Metric | Point estimate | Mean | Lower | Upper |")
+        lines.append("|---|---|---|---|---|")
+        for k in ["macro_f1", "mAP_50", "sensitivity", "frame_auc"]:
+            ci = boot.get(k) or {}
+            pt = full.get(k, '-')
+            lines.append(
+                f"| {k} | {_fmt(pt)} | {_fmt(ci.get('mean', '-'))} | "
+                f"{_fmt(ci.get('lower', '-'))} | {_fmt(ci.get('upper', '-'))} |"
+            )
         lines.append("")
 
     # Best threshold

@@ -1,4 +1,4 @@
-"""Unit and integration tests for the CADICA evaluation framework.
+﻿"""Unit and integration tests for the CADICA evaluation framework.
 
 Tests hand-computed toy cases:
 - Perfect predictions yield metrics = 1.0
@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import pytest
 import numpy as np
+
+from pathlib import Path
 
 from src.evaluation.matching import (
     compute_iou_xywh,
@@ -414,6 +416,119 @@ class TestBootstrap:
             assert ci["lower"] <= ci["upper"] + 1e-6
             assert 0.0 <= ci["upper"] <= 1.0 + 1e-6
 
+    def test_synthetic_run_uses_pred_gt_universe(self, perfect_case, class_ids_3, class_names_3):
+        """split=None (synthetic data only) must fall back to preds|gts, not error."""
+        preds, gts = perfect_case
+        boot = bootstrap_confidence_intervals(
+            preds, gts, class_ids_3, {"img1": "p1", "img2": "p2", "img3": "p3"},
+            class_names_3, n_bootstrap=10, seed=42,
+        )
+        assert boot["universe"]["split"] is None
+        assert boot["universe"]["n_frames"] == 3
+        assert boot["universe"]["n_patients"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap universe: must be the canonical eval set, never frames_index.csv
+# ---------------------------------------------------------------------------
+
+_RUN_DIR = "outputs/runs/exp_7class_yolo11s_oversample_run1"
+_HAS_REAL = Path(_RUN_DIR, "preds_val.json").exists() and Path(_RUN_DIR, "preds_test.json").exists()
+
+_REAL_SKIP = pytest.mark.skipif(
+    not _HAS_REAL,
+    reason="Real run artifacts (preds_val/test.json) not present.",
+)
+
+
+def _load_real(split: str):
+    """Return (preds, gts, frame_to_patient) for a canonical split."""
+    import json
+
+    from src.data.eval_sets import load_eval_ground_truth
+
+    with open(Path(_RUN_DIR, f"preds_{split}.json"), encoding="utf-8") as f:
+        preds = json.load(f)
+    gts, f2p = load_eval_ground_truth(split, scheme="7class")
+    return preds, gts, f2p
+
+
+@_REAL_SKIP
+class TestBootstrapUniverse:
+    """Regression for the 42-patient universe bug.
+
+    bootstrap_confidence_intervals previously grouped frames by the whole
+    frames_index.csv (31,499 frames / 42 patients). 36 of those patients have no
+    eval frames, so their empty frames became score-0 negatives: inert for
+    mAP/F1 but inflating frame ROC-AUC from 0.65 to ~0.99 and corrupting every
+    CI by resampling a universe the model was never evaluated on.
+    """
+
+    CLASS_IDS = [0, 1, 2, 3, 4, 5, 6]
+
+    @pytest.mark.parametrize("split,exp_frames,exp_patients", [("val", 722, 6), ("test", 852, 6)])
+    def test_universe_size_and_patient_count(self, split, exp_frames, exp_patients):
+        """(a) Universe is the canonical eval frames grouped by their patients."""
+        preds, gts, f2p = _load_real(split)
+        boot = bootstrap_confidence_intervals(
+            preds, gts, self.CLASS_IDS, f2p, {},
+            conf_threshold=0.05, n_bootstrap=10, seed=42, split=split,
+        )
+        assert boot["universe"]["n_frames"] == exp_frames
+        assert boot["universe"]["n_patients"] == exp_patients
+        # frames_index.csv must NOT leak in: it holds 42 patients / 31,499 frames.
+        assert boot["universe"]["n_patients"] < 42
+
+    def test_full_sample_frame_auc_matches_point_estimate(self):
+        """(b) Full-sample frame AUC == compute_frame_metrics within 1e-6, and CI contains it."""
+        preds, gts, f2p = _load_real("val")
+        boot = bootstrap_confidence_intervals(
+            preds, gts, self.CLASS_IDS, f2p, {},
+            conf_threshold=0.05, n_bootstrap=200, seed=42, split="val",
+        )
+        direct = compute_frame_metrics(preds, gts, conf_threshold=0.05)
+        point = float(direct["roc_auc"])
+        assert boot["full_sample"]["frame_auc"] == pytest.approx(point, abs=1e-6)
+
+        ci = boot["frame_auc"]
+        assert ci["lower"] <= point <= ci["upper"], (
+            f"Frame AUC point {point} outside CI [{ci['lower']}, {ci['upper']}]"
+        )
+
+    @pytest.mark.parametrize("split", ["val", "test"])
+    def test_all_four_cis_share_one_universe(self, split):
+        """(c) mAP50 / macro F1 / sensitivity / frame AUC all over the same canonical frames."""
+        preds, gts, f2p = _load_real(split)
+        conf = 0.05
+        boot = bootstrap_confidence_intervals(
+            preds, gts, self.CLASS_IDS, f2p, {},
+            conf_threshold=conf, n_bootstrap=10, seed=42, split=split,
+        )
+        fs = boot["full_sample"]
+        # One universe -> each full-sample value equals the direct metric on the
+        # canonical frames. Equality across all four proves a shared universe.
+        det = compute_detection_metrics(preds, gts, self.CLASS_IDS, {}, conf_threshold=conf)
+        assert fs["macro_f1"] == pytest.approx(det["macro"]["f1"], abs=1e-6)
+        assert fs["sensitivity"] == pytest.approx(det["micro"]["recall"], abs=1e-6)
+        assert fs["mAP_50"] == pytest.approx(
+            compute_map_50_95(preds, gts, self.CLASS_IDS)["mAP_50"], abs=1e-6
+        )
+        assert fs["frame_auc"] == pytest.approx(
+            compute_frame_metrics(preds, gts, conf_threshold=conf)["roc_auc"], abs=1e-6
+        )
+
+    def test_frame_auc_ci_is_wide_not_vacuous(self):
+        """The corrected 6-patient CI must be meaningfully wide, unlike the 0.99 artifact."""
+        preds, gts, f2p = _load_real("val")
+        boot = bootstrap_confidence_intervals(
+            preds, gts, self.CLASS_IDS, f2p, {},
+            conf_threshold=0.05, n_bootstrap=200, seed=42, split="val",
+        )
+        ci = boot["frame_auc"]
+        # The contaminated universe produced a tight band around ~0.99.
+        assert ci["upper"] < 0.99, f"Upper bound {ci['upper']} looks like the 42-patient artifact."
+        assert (ci["upper"] - ci["lower"]) > 0.02, "CI suspiciously narrow for 6 patients."
+
 
 # ---------------------------------------------------------------------------
 # Known IoU value: verified by hand
@@ -525,4 +640,114 @@ class TestCanonicalEvalSets:
         from src.data.eval_sets import load_eval_ground_truth
         with pytest.warns(UserWarning, match=r"--full-frames"):
             load_eval_ground_truth("val", scheme="7class", full_frames=True)
+
+
+class TestUltralyticsAPAgreement:
+    """Regression: our AP50 must match Ultralytics ap_per_class on the same predictions.
+
+    Guards the Phase-3 mAP audit conclusion: the val mAP50 gap vs results.csv is a
+    data-split difference (training-oversampled split vs canonical 722-frame set),
+    NOT an evaluator bug. Our per-class AP50 must agree with Ultralytics' reference
+    implementation within tolerance 0.01 on identical inputs.
+    """
+
+    @staticmethod
+    def _ultralytics_ap50(preds, gts, n_classes=7, iou_thr=0.5):
+        """Compute per-class AP50 using ultralytics.utils.metrics.ap_per_class."""
+        from ultralytics.utils.metrics import ap_per_class
+
+        def _iou(a, b):
+            ax, ay, aw, ah = a
+            bx, by, bw, bh = b
+            ix1, iy1 = max(ax, bx), max(ay, by)
+            ix2, iy2 = min(ax + aw, bx + bw), min(ay + ah, by + bh)
+            iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+            inter = iw * ih
+            uni = aw * ah + bw * bh - inter
+            return inter / uni if uni > 0 else 0.0
+
+        all_tp, all_conf, all_pcls = [], [], []
+        for fid, plist in preds.items():
+            gtc = {}
+            for g in gts.get(fid, []):
+                gtc.setdefault(int(g[4]), []).append(g)
+            # Per-class set of matched GT indices. Using bare indices across all
+            # classes lets class 0's match at index 0 wrongly block class 2's
+            # independent GT at index 0.
+            used = {c: set() for c in gtc}
+            for p in sorted(plist, key=lambda x: -x[4]):
+                cls = int(p[5])
+                all_conf.append(p[4])
+                all_pcls.append(cls)
+                best, bi = 0.0, -1
+                for j, g in enumerate(gtc.get(cls, [])):
+                    if j in used.get(cls, set()):
+                        continue
+                    v = _iou(p[:4], g[:4])
+                    if v > best:
+                        best, bi = v, j
+                if best >= iou_thr and bi >= 0:
+                    all_tp.append(1)
+                    used.setdefault(cls, set()).add(bi)
+                else:
+                    all_tp.append(0)
+
+        target_cls = [int(g[4]) for gl in gts.values() for g in gl]
+        res = ap_per_class(
+            np.array(all_tp).reshape(-1, 1),
+            np.array(all_conf),
+            np.array(all_pcls),
+            np.array(target_cls),
+        )
+        ap, unique_classes = res[5], res[6]
+        ap = np.asarray(ap)
+        if ap.ndim == 2:
+            ap = ap[:, 0]  # IoU=0.50 column
+        return {int(c): float(a) for c, a in zip(unique_classes, ap)}
+
+    def test_ap50_matches_ultralytics(self):
+        """Our per-class AP50 matches Ultralytics ap_per_class within 0.01."""
+        preds = {
+            "img1": [
+                [10.0, 10.0, 50.0, 50.0, 0.9, 0],   # TP class 0
+                [200.0, 200.0, 30.0, 30.0, 0.8, 0], # FP class 0
+                [5.0, 5.0, 40.0, 40.0, 0.7, 2],     # TP class 2
+            ],
+            "img2": [
+                [50.0, 50.0, 60.0, 60.0, 0.85, 1],  # TP class 1
+                [100.0, 10.0, 20.0, 20.0, 0.4, 0],  # FP class 0 (below GT)
+            ],
+            "img3": [],                              # negative frame, has GT class 4
+        }
+        gts = {
+            "img1": [
+                [12.0, 12.0, 48.0, 48.0, 0],
+                [6.0, 6.0, 42.0, 42.0, 2],
+            ],
+            "img2": [
+                [52.0, 52.0, 58.0, 58.0, 1],
+            ],
+            "img3": [
+                [20.0, 20.0, 30.0, 30.0, 4],
+            ],
+        }
+        ours = compute_map_50_95(preds, gts, list(range(7)))["per_class_AP_50"]
+        ultra = self._ultralytics_ap50(preds, gts, n_classes=7)
+        # Compare per-class on classes present in GT
+        for cls in {int(g[4]) for gl in gts.values() for g in gl}:
+            o = ours.get(cls, 0.0)
+            u = ultra.get(cls, 0.0)
+            assert abs(o - u) < 0.01, (
+                f"class {cls}: ours AP50={o:.4f} vs ultralytics={u:.4f} (delta {abs(o-u):.4f} >= 0.01)"
+            )
+
+    def test_ap50_matches_ultralytics_zero_tp_class(self):
+        """Zero-TP class yields AP50 == 0.0 in both implementations."""
+        preds = {"img1": [[10.0, 10.0, 30.0, 30.0, 0.9, 0]]}
+        gts = {"img1": [[10.0, 10.0, 30.0, 30.0, 0], [200.0, 200.0, 20.0, 20.0, 3]]}
+        ours = compute_map_50_95(preds, gts, list(range(7)))["per_class_AP_50"]
+        ultra = self._ultralytics_ap50(preds, gts)
+        # class 3 has GT but no predictions -> AP 0.0 both sides
+        assert ours.get(3, 0.0) == 0.0
+        assert abs(ours.get(3, 0.0) - ultra.get(3, 0.0)) < 0.01
 

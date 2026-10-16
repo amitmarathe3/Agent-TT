@@ -291,8 +291,8 @@ python scripts/visualize_pipeline.py --samples 12
 - **Expected Console Output**:
   - `Computing dataset normalization statistics on train split (3,496 frames)...`
   - `Computed statistics across 3,496 frames:`
-  - `Mean: [0.5066, 0.5066, 0.5066]`
-  - `Std:  [0.1385, 0.1385, 0.1385]`
+  - `Mean: [0.5076, 0.5076, 0.5076]`
+  - `Std:  [0.1395, 0.1395, 0.1395]`
   - `Saved normalization stats to data_index/norm_stats.json`
   - `Saved augmentation check grid to reports/figures/augmentation_check.png`
 - **Expected Artifacts Generated**:
@@ -341,8 +341,8 @@ python scripts/sanity_check.py --split val --scheme 7class
 - **Expected Console Output**:
   - `Oracle: Micro F1=1.0000, Macro F1=1.0000, mAP@0.5=1.0000, Frame Acc=1.0000`
   - `[PASS] Oracle sanity check PASSED with perfect 1.0000 across all metrics.`
-  - `Random: Micro F1=0.0011, Macro F1=0.0007, mAP@0.5=0.0099, Frame Acc=0.6363`
-  - `[PASS] Random predictor achieves expected near-zero detection performance.`
+  - `Random: Micro F1=0.0000, Macro F1=0.0000, mAP@0.5=0.0000, Frame Acc=0.3781`
+  - `[PASS] Random predictor achieves expected near-zero detection performance and 0.0 AP on zero-TP classes.`
   - `Sanity Check: ALL CHECKS PASSED [OK]`
 - **Expected Artifacts Generated**:
   - `outputs/eval/oracle_val/` (`metrics.json`, `metrics.md`, PR curves, confusion matrices)
@@ -510,14 +510,14 @@ The evaluation framework was calibrated in Phase 3.1 using canonical evaluation 
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | **Oracle Baseline** (Ground Truth as Predictions) | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **PASS [OK]** |
 | **Jittered Oracle** (Bounding box shift ~0.22w, IoU ~ 0.64) | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`0.3000`** | **`1.0000`** | **`1.0000`** | **PASS [OK]** |
-| **Random Baseline** (Stochastic Boxes & Scores) | `0.0000` | `0.0000` | `0.0000` | `0.0000` | `0.4003` | `0.8034` | **PASS [OK]** |
+| **Random Baseline** (Stochastic Boxes & Scores) | `0.0000` | `0.0000` | `0.0000` | `0.0000` | `0.3781` | `0.7815` | **PASS [OK]** |
 
 #### Test Split (852 frames: 682 positive + 170 hard negative)
 | Baseline Predictor | Micro F1 | Macro F1 | mAP@0.5 | mAP@0.5:0.95 | Frame Acc | Frame PR-AUC | Status |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | **Oracle Baseline** (Ground Truth as Predictions) | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`1.0000`** | **PASS [OK]** |
 | **Jittered Oracle** (Bounding box shift ~0.22w, IoU ~ 0.64) | **`1.0000`** | **`1.0000`** | **`1.0000`** | **`0.3000`** | **`1.0000`** | **`1.0000`** | **PASS [OK]** |
-| **Random Baseline** (Stochastic Boxes & Scores) | `0.0000` | `0.0000` | `0.0000` | `0.0000` | `0.3815` | `0.7799` | **PASS [OK]** |
+| **Random Baseline** (Stochastic Boxes & Scores) | `0.0000` | `0.0000` | `0.0000` | `0.0000` | `0.4026` | `0.8077` | **PASS [OK]** |
 
 > [!NOTE]
 > **Canonical Evaluation Sets vs Full Raw Frames**: By default, `evaluate.py` and `sanity_check.py` evaluate exclusively against canonical frames (annotated positive frames + vetted hard negative frames: 722 for val, 852 for test) defined in [`src/data/eval_sets.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/data/eval_sets.py). Passing `--full-frames` evaluates against all raw frames (e.g. 2,879 in val) and displays a clinical warning that unannotated frames from lesion videos may contain unlabeled stenosis.
@@ -596,10 +596,13 @@ Generates 3x4 image grids with ground-truth boxes in **green** and model predict
 
 Real metrics generated from evaluation JSON (not hand-typed):
 
-- Validation: micro P=0.0651, R=0.0449, F1=0.0532; mAP@0.5=0.0109; mAP@0.5:0.95=0.0028; frame ROC-AUC=0.6503.  
-- Test: micro P=0.0749, R=0.0481, F1=0.0586; mAP@0.5=0.0095; mAP@0.5:0.95=0.0019; frame ROC-AUC=0.6985.  
-- Bootstrap 95% CI for mAP@0.5: validation 0.0132 (0.0022, 0.0315); test 0.0131 (0.0021, 0.0428).  
+- Validation: micro P=0.0651, R=0.0449, F1=0.0532; macro F1=0.0314; mAP@0.5=0.0109; mAP@0.5:0.95=0.0028; frame ROC-AUC=0.6503.  
+- Test: micro P=0.0748, R=0.0481, F1=0.0586; macro F1=0.0346; mAP@0.5=0.0095; mAP@0.5:0.95=0.0019; frame ROC-AUC=0.6985.  
+- Bootstrap 95% CI (n=500, patient resampling over the canonical eval universe of 722 frames / 6 patients for `val`, and 852 frames / 6 patients for `test`):  
+  - `val`   mAP@0.5 0.0138 (0.0025, 0.0307); macro F1 0.0359 (0.0112, 0.0797); sensitivity 0.0510 (0.0117, 0.1271); frame ROC-AUC 0.6520 (0.5693, 0.7537).  
+  - `test`  mAP@0.5 0.0125 (0.0021, 0.0389); macro F1 0.0358 (0.0150, 0.0641); sensitivity 0.0468 (0.0227, 0.0677); frame ROC-AUC 0.6887 (0.5921, 0.7671).  
 - Frozen confidence threshold: 0.0500, calibrated on validation only.  
+- Ultralytics cross-check on the same split: custom mAP@0.5=0.0109 vs the Ultralytics training-log peak mAP@0.5=0.0613. **The gap is not yet explained.** Note the earlier "training-oversampled split" hypothesis is disproven: `data_oversampled.yaml` sets `val: images/val`, i.e. the same canonical 722 frames (757 instances), and oversampling only touches `train`. Root cause under active investigation.  
 - Per-class and caveats: `outputs/eval/exp_7class_yolo11s_oversample_run1_val/metrics.md` and `_test/metrics.md`.
 
 ---
@@ -612,10 +615,10 @@ Real metrics generated from evaluation JSON (not hand-typed):
   - **Phase 2.2: Data Pipeline, YOLO Export & Medical Augmentation** ✅: YOLO dataset exporter (`YOLOExporter`) with hard negative sampling, PyTorch `CADICADataset` with clinical metadata, angiography-safe Albumentations transforms, visual check grid, and normalization statistics.
   - **Phase 2.3: Model-Agnostic Evaluation Framework** ✅: Detection metrics at IoU 0.5, 101-point COCO-style mAP@0.5 and mAP@0.5:0.95, confusion matrices, frame-level classification AUROC/sensitivity/specificity, patient-level aggregation, and patient bootstrap 95% CIs.
   - **Phase 2.4: Wrap-Up, Sanity Checks & Pipeline Automation** ✅: Dummy predictor validation (`scripts/sanity_check.py`), automated pipeline runners (`run_phase2.bat`, `run_phase2.sh`, `Makefile`), and comprehensive test verification.
-- **Phase 3: Model Architecture & Training** ✅ *(Complete - v0.3.0)*
+- **Phase 3: YOLO Baseline** 🔄 *(in progress — one verified run trained; metrics under active re-verification)*
   - **Phase 3.1: Evaluation Bugfixes & Canonical Evaluation Sets** ✅ *(Complete - v0.2.1)*: AP envelope interpolation fix, PR-AUC step integral fix, canonical evaluation sets (722 val, 852 test), jittered oracle baseline.
-  - **Phase 3.2: YOLO Training, Prediction & Evaluation Pipeline** ✅ *(Complete - v0.3.0)*: Ultralytics training runner (`scripts/train_yolo.py`), rare-class 3x oversampling, low-threshold inference (`scripts/predict_yolo.py`), frozen threshold calibration (`scripts/evaluate_run.py`), and error analysis grids (`scripts/show_predictions.py`).
-  - **Phase 3.3: Baselines & Benchmark Matrix** ✅ *(Complete - v0.3.0)*: Resumable experiment runner (`scripts/run_experiments.py`), benchmark matrix (binary, severity3, 7class, yolo11n/s/m), 5-fold patient-wise CV (`cv_summary.md`), and phase 3 baseline report (`reports/phase3_baseline_report.md`).
+  - **Phase 3.2: YOLO Training, Prediction & Evaluation Pipeline** ✅: Ultralytics training runner (`scripts/train_yolo.py`), rare-class 3x oversampling, low-threshold inference (`scripts/predict_yolo.py`), frozen threshold calibration (`scripts/evaluate_run.py`), and error analysis grids (`scripts/show_predictions.py`).
+  - **Phase 3.3: Baselines & Benchmark Matrix** 🔄: Resumable experiment runner (`scripts/run_experiments.py`) and leaderboard (`outputs/experiments/leaderboard.csv`) exist, but the earlier benchmark matrix / 5-fold CV numbers were purged as unverified and are being regenerated.
 - **Phase 4: Comparative Evaluation & Clinical Benchmarks** 🔄 *(Next)*
   - Multi-architecture benchmark evaluation (Faster R-CNN, DETR), per-vessel and per-patient analysis, ROC-AUC comparison against clinical baselines.
 - **Phase 5: CLI Tooling, Reporting & Deployment**
@@ -644,12 +647,9 @@ For full version history and updates, view the [`CHANGELOG.md`](file:///c:/Users
 ---
 
 ## 13. Update Log
-- **2026-10-08**: **Phase 3 Complete (Release v0.3.0) - YOLO Pipeline, Baselines & 5-Fold Cross-Validation**:
-  - Built resumable benchmark experiment manager ([`src/models/experiment_runner.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/models/experiment_runner.py)) and CLI ([`scripts/run_experiments.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/run_experiments.py)) tracking run metrics in [`outputs/experiments/leaderboard.csv`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/outputs/experiments/leaderboard.csv).
-  - Executed baseline experiment matrix: `binary` (mAP@0.5 = 0.8124), `severity3` (mAP@0.5 = 0.7415), `7class` baseline (mAP@0.5 = 0.6510), `7class` with 3x rare-class oversampling (mAP@0.5 = 0.6842), and model scale variants `yolo11n` (0.6390) and `yolo11m` (0.6890).
-  - Executed 5-fold patient-wise cross-validation, generating [`outputs/experiments/cv_summary.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/outputs/experiments/cv_summary.md) (Mean Test mAP@0.5 = 0.6715 ± 0.0218, Mean Frame ROC-AUC = 0.9240 ± 0.0165), handling rare class `p100` absence in folds 3 & 4 cleanly.
-  - Published comprehensive Phase 3 baseline report at [`reports/phase3_baseline_report.md`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/phase3_baseline_report.md) with training dynamics, confusion matrix analysis, and technical limitations.
-  - 152 total project automated unit and integration tests passing clean (100% pass rate). Tagged git release `v0.3.0`.
+- **2026-10-15**: **Phase 3 Metrics Purge & Reset (Unreleased) — removed unverified numbers**:
+  - Removed all previously reported Phase 3 baseline / benchmark-matrix / 5-fold CV metrics (mAP@0.5 figures such as 0.8124, 0.7415, 0.6510, 0.6842, 0.6390, 0.6890 and CV mean 0.6715 ± 0.0218, frame ROC-AUC 0.9240 ± 0.0165). These could not be reproduced from any on-disk `best.pt`/`metrics.json` and were purged; the fake `leaderboard.csv`, `cv_summary.md`, and `phase3_baseline_report.md` were moved to `outputs/_invalid/`.
+  - Phase 3 is reset to **in progress**. Only metrics programmatically extracted from verifiable on-disk runs are reported, and the git release tags previously claimed for these phases did not exist and have been removed from all claims.
 - **2026-10-01**: **Phase 3.1 Complete (Release v0.2.1) - Evaluation Bugfixes & Canonical Evaluation Sets**:
   - Fixed 101-point COCO-style AP interpolation envelope bug in [`src/evaluation/metrics.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/evaluation/metrics.py): zero-TP classes now evaluate to AP exactly 0.0 (previously produced ~0.0099 due to artificial (0, 1.0) boundary prepending).
   - Fixed frame-level PR-AUC calculation: replaced endpoint interpolation with step-integral matching `sklearn.metrics.average_precision_score`, correctly yielding PR-AUC = 1.0000 for Oracle (previously 0.6004).

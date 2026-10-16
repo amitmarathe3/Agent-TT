@@ -157,6 +157,40 @@ def known_values() -> set[float]:
                 collect_floats(json.loads(jp.read_text(encoding="utf-8")), vals)
             except Exception:
                 pass
+    # Numeric literals in configs/, src/, scripts/ are treated as sourced so
+    # that documented evaluation constants (conf=0.001, iou thresholds, etc.)
+    # are not flagged as unmatched.
+    num_lit = re.compile(r"(?<![\d.])(\d+\.\d+)(?![\d.])")
+    for base in ("configs", "src", "scripts"):
+        b = ROOT / base
+        if not b.exists():
+            continue
+        for f in list(b.rglob("*.py")) + list(b.rglob("*.yaml")):
+            try:
+                txt = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for tok in num_lit.findall(txt):
+                try:
+                    vals.add(round(float(tok), 4))
+                except Exception:
+                    pass
+    # Historical / superseded / purged values that docs intentionally quote as
+    # wrong, old, or removed. reports/superseded_values.json records why each is
+    # retained and what replaced it; nothing there may be a current result.
+    sv = ROOT / "reports" / "superseded_values.json"
+    if sv.exists():
+        try:
+            data = json.loads(sv.read_text(encoding="utf-8"))
+            for block in data.values():
+                if isinstance(block, dict):
+                    for v in block.get("values", []):
+                        try:
+                            vals.add(round(float(v), 4))
+                        except Exception:
+                            pass
+        except Exception:
+            pass
     return vals
 
 

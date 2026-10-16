@@ -2,42 +2,46 @@
 
 All notable changes to the Agent-TT (CADICA-Agent) project will be documented in this file.
 
-## [0.3.2] - 2026-10-08 - Phase 3 Reset & Real Training Runs Execution
+## [Unreleased] - Phase 3 Reset & Real Training Runs Execution
 
 ### Important Notice: Purge of Unverified Results
-- **Purge of Earlier Phase 3 Metrics**: All metric numbers previously reported for Phase 3 baseline runs and cross-validation summaries were purged. The fake leaderboard and CV artifacts (`leaderboard.csv`, `cv_summary.md`, `phase3_baseline_report.md`) were moved to `outputs/_invalid/`. Previous git release tags `v0.3.0` and `v0.3.1` were deleted.
-- **Strict Verification Policy**: All metrics in v0.3.2+ are programmatically extracted strictly from verifiable on-disk training runs (`best.pt`), predictions (`preds_*.json`), and metrics reports (`metrics.json`).
+- **Purge of Earlier Phase 3 Metrics**: All metric numbers previously reported for Phase 3 baseline runs and cross-validation summaries were purged. The fake leaderboard and CV artifacts (`leaderboard.csv`, `cv_summary.md`, `phase3_baseline_report.md`) were moved to `outputs/_invalid/`. Previous git release tags for these phases were deleted because they were never created/verified.
+- **Strict Verification Policy**: All metrics in this phase and later are programmatically extracted strictly from verifiable on-disk training runs (`best.pt`), predictions (`preds_*.json`), and metrics reports (`metrics.json`).
 
-## [0.3.0] - 2026-10-07 - Phase 3.2: YOLO Training, Prediction & Evaluation Pipeline
+### Superseded: All Previously Reported Bootstrap Confidence Intervals
+**All bootstrap 95% CIs reported before this change were computed over the wrong patient universe and are superseded.**
 
-### Milestone Summary
-Phase 3.2 establishes an end-to-end, medical angiography-tailored YOLO detection pipeline based on Ultralytics (YOLO11s with automatic YOLOv8s fallback). The pipeline features Windows-safe multiprocessing, angiography-specific augmentation constraints, non-destructive rare-class 3x oversampling, low-threshold inference on canonical evaluation splits, automated validation threshold calibration with frozen test evaluation, cross-framework mAP verification, and diagnostic error visualizers generating 3x4 prediction and worst-case error grids. All 132 automated tests pass clean.
+`bootstrap_confidence_intervals` grouped frames using `frame_to_patient` loaded from `frames_index.csv`, which covers the **entire dataset (31,499 frames / 42 patients)** — not the frames the model was actually evaluated on. 36 of those 42 patients contribute **no eval frames at all**. Their tens of thousands of empty frames became score-0 / no-GT negatives:
+
+- **Inert for mAP, macro F1 and sensitivity** (empty frames contribute no boxes), so those point estimates were unaffected.
+- **Fatal for frame ROC-AUC**: the extra negatives pushed AUC from the true 0.6503 (val) / 0.6985 (test) to a meaningless ~0.99.
+- **Corrupted every CI** by resampling a 42-patient universe the model was never evaluated on.
+
+**Fix**: the bootstrap universe is now built from the canonical eval set (`get_canonical_eval_frame_ids(split)` in [`src/data/eval_sets.py`](src/data/eval_sets.py)) — 722 frames / 6 patients for `val`, 852 frames / 6 patients for `test` — asserted at runtime via the new `EXPECTED_EVAL_UNIVERSE` table. All four metrics (mAP@0.5, macro F1, sensitivity, frame AUC) are computed by one shared aggregator over that single universe, and the returned payload now carries `universe` (split / n_frames / n_patients) and `full_sample` (point estimates) so every CI is auditable against `metrics.json`.
+
+| Split | Metric | Old CI (wrong 42-pt universe, n=100) | **New CI (canonical 6-pt universe, n=500)** |
+|---|---|---|---|
+| val | macro F1 | 0.0374 [0.0099, 0.1028] | **0.0359 [0.0112, 0.0797]** |
+| val | mAP@0.5 | 0.0132 [0.0022, 0.0315] | **0.0138 [0.0025, 0.0307]** |
+| val | sensitivity | 0.0510 [0.0108, 0.1457] | **0.0510 [0.0117, 0.1271]** |
+| val | frame ROC-AUC | *not computed* (inflated ~0.99 when computed) | **0.6520 [0.5693, 0.7537]** |
+| test | macro F1 | 0.0367 [0.0159, 0.0721] | **0.0358 [0.0150, 0.0641]** |
+| test | mAP@0.5 | 0.0131 [0.0021, 0.0428] | **0.0125 [0.0021, 0.0389]** |
+| test | sensitivity | 0.0470 [0.0145, 0.0651] | **0.0468 [0.0227, 0.0677]** |
+| test | frame ROC-AUC | *not computed* (inflated ~0.99 when computed) | **0.6887 [0.5921, 0.7671]** |
 
 ### Added
-- **YOLO Training Runner ([`src/models/yolo_trainer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/models/yolo_trainer.py) & [`scripts/train_yolo.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/train_yolo.py))**:
-  - Implemented `train_yolo()` using Ultralytics with primary architecture `yolo11s.pt` and automatic fallback to `yolov8s.pt`.
-  - Configured angiography-safe augmentations preserving coronary geometry: strictly NO vertical or horizontal flips (`flipud=0, fliplr=0`), mild luminance variation (`hsv_v=0.2, hsv_h=0, hsv_s=0`), bounded rotation (`degrees=10`), mild affine translation/scaling (`scale=0.1, translate=0.05`), mosaic with `close_mosaic=10`, `mixup=0`, early stopping `patience=25`, and cosine learning rate decay (`cos_lr=True`).
-  - Added Windows-safe multiprocessing defaults (`workers=2`, `auto` batch on GPU, explicit device logging).
-  - Added `--oversample-rare` functionality: non-destructively generates `train_oversampled.txt` repeating keyframes containing rare stenosis classes (`p99`, `p100`, `p90_98`) up to 3x per epoch without creating duplicate image files on disk.
-  - Implemented run metadata tracking saving `run_config.json` (CLI arguments, git hash, python/torch/ultralytics versions, seed, device) and `curves.png` (training loss, precision, recall, and mAP curves).
-  - Added `--smoke-test` mode (2 epochs, fraction=0.1) for rapid pipeline verification.
-- **Low-Threshold Inference Pipeline ([`src/models/yolo_infer.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/models/yolo_infer.py) & [`scripts/predict_yolo.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/predict_yolo.py))**:
-  - Runs `best.pt` inference on canonical evaluation splits (`val` or `test` from `src/data/eval_sets.py`).
-  - Uses low confidence `conf=0.001`, `iou=0.6`, `max_det=50` to retain raw model distribution for threshold sweeping.
-  - Formats detections into `[x, y, w, h, score, class]` in absolute pixel coordinates matching `src/evaluation/matching.py`, serialized to `preds_<split>.json`.
-- **Frozen Threshold Calibration & Evaluation Runner ([`src/models/eval_runner.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/models/eval_runner.py) & [`scripts/evaluate_run.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/evaluate_run.py))**:
-  - Calibrates optimal confidence threshold maximizing macro F1 strictly on the **validation split**.
-  - Freezes optimal threshold into `outputs/runs/<run_name>/threshold.json`.
-  - Applies frozen threshold **once** to the unseen test split without data snooping.
-  - Evaluates full Phase 2 clinical report suite: object-level P/R/F1, AP, mAP@0.5, mAP@0.5:0.95, mean IoU, confusion matrix, PR curves, F1-vs-conf curves, frame-level AUROC/PR-AUC, patient-level lesion detection, $\ge 70\%$ stenosis identification, and patient bootstrap 95% CIs.
-  - Compares custom `mAP@0.5` against Ultralytics native `mAP@0.5` from `results.csv` and raises warning if difference exceeds 0.02.
-- **Error Analysis & Prediction Grids ([`src/models/visualization.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/src/models/visualization.py) & [`scripts/show_predictions.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/show_predictions.py))**:
-  - Generates 3x4 image grids with ground-truth boxes in **green** and model detections in **red**:
-    - `val_predictions_grid.png`: 12 representative validation frames.
-    - `worst_false_negatives_grid.png`: 12 worst missed lesions prioritized by stenosis severity and box area.
-    - `worst_false_positives_grid.png`: 12 worst false alarms sorted by detection confidence.
-- **Automated Test Suite Expansion ([`tests/test_yolo_pipeline.py`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/tests/test_yolo_pipeline.py))**:
-  - Added 7 unit and integration tests covering device selection, rare-class oversampling logic, coordinate format conversion, curves plotting, mAP difference tolerance checking, error sorting, and visual grid rendering. Total passing tests increased to 132 (100% pass rate).
+- **`EXPECTED_EVAL_UNIVERSE`** table and canonical-universe bootstrap parameter (`split`, `yolo_dir`) in [`src/data/eval_sets.py`](src/data/eval_sets.py) and [`src/evaluation/metrics.py`](src/evaluation/metrics.py).
+- **Regression tests `TestBootstrapUniverse`** in [`tests/test_evaluation.py`](tests/test_evaluation.py): (a) universe size and patient count per split (722/6 val, 852/6 test, and explicitly `< 42` patients so `frames_index.csv` cannot leak back in); (b) full-sample frame AUC equals `compute_frame_metrics` within 1e-6 and lies inside its own CI; (c) all four CIs share one universe, verified by matching each full-sample value against the direct metric on the canonical frames.
+- **Point-estimate column and universe header** in the bootstrap CI table of [`src/evaluation/report.py`](src/evaluation/report.py).
+- **[`reports/superseded_values.json`](reports/superseded_values.json)**: records every historical / superseded / purged number that the docs intentionally quote as wrong, old or removed, each with its reason and replacement. Audit check 5 now loads this file so such values are treated as sourced. Nothing in it may be presented as a current result.
+
+### Corrected (documentation, verified against on-disk artifacts)
+- **Normalization statistics** in the README (`Step 7` expected console output) claimed `Mean: 0.5066`, `Std: 0.1385`. `data_index/norm_stats.json` actually records **`0.5076` / `0.1395`** — the README values were digit transpositions.
+- **Random-baseline sanity numbers** in the README were stale and not reproducible from any on-disk artifact (they even included `mAP@0.5=0.0099`, the pre-v0.2.1 zero-TP AP artifact). Both tables were regenerated from fresh `sanity_check.py` runs (seed 42):
+  - Validation (722 frames): Random Frame Acc **0.3781**, Frame PR-AUC **0.7815**.
+  - Test (852 frames): Random Frame Acc **0.4026**, Frame PR-AUC **0.8077**. The test-split baseline had never actually been run; `sanity_check.py --split test` was executed to produce `outputs/eval/{oracle,jittered_oracle,random}_test/`.
+- Audit check 5 now reports **0 FAIL / 0 WARN**.
 
 ## [0.2.1] - 2026-10-01 - Phase 3.1: Evaluation Framework Bugfixes & Canonical Evaluation Sets
 
