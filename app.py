@@ -46,8 +46,16 @@ RANGE = {
 
 RUN_GLOB = "*run1*"
 YOLO_DIR = ROOT / "outputs" / "yolo_dataset"
-TEST_IMAGES = YOLO_DIR / "test" / "images"
-TEST_LABELS = YOLO_DIR / "test" / "labels"
+TEST_IMAGES = (
+    (YOLO_DIR / "test" / "images")
+    if (YOLO_DIR / "test" / "images").exists()
+    else (YOLO_DIR / "images" / "test")
+)
+TEST_LABELS = (
+    (YOLO_DIR / "test" / "labels")
+    if (YOLO_DIR / "test" / "labels").exists()
+    else (YOLO_DIR / "labels" / "test")
+)
 THRESH_FILE = ROOT / "outputs" / "runs" / (
     _cfg.get("run_name", "exp_7class_yolo11s_oversample_run1") + "/threshold.json"
 )
@@ -65,8 +73,11 @@ def banner_text() -> str:
     """Banner with numbers read at runtime from the val metrics.json."""
     p = _val_metrics_path()
     if p is None or not p.exists():
-        return ("Research prototype, not a diagnostic device. Validation metrics "
-                "unavailable. Detections are NOT reliable.")
+        return (
+            "Research prototype, not a diagnostic device. Validation metrics "
+            "unavailable. Results depend on preprocessing (512 vs 544 changed val mAP50 about 2.5x). "
+            "Detections are NOT reliable."
+        )
     try:
         m = json.loads(p.read_text(encoding="utf-8"))
         map50 = float(m["map"]["mAP_50"])
@@ -74,11 +85,15 @@ def banner_text() -> str:
         return (
             f"**Research prototype, not a diagnostic device.** "
             f"Val mAP@0.5 **{map50:.4f}**, frame AUC **{auc:.4f}**. "
+            f"Results depend on preprocessing (512 vs 544 changed val mAP50 about 2.5x). "
             f"**Detections are NOT reliable.**"
         )
     except Exception:  # pragma: no cover - banner must never crash
-        return ("Research prototype, not a diagnostic device. Validation metrics "
-                "could not be read. Detections are NOT reliable.")
+        return (
+            "Research prototype, not a diagnostic device. Validation metrics "
+            "could not be read. Results depend on preprocessing (512 vs 544 changed val mAP50 about 2.5x). "
+            "Detections are NOT reliable."
+        )
 
 
 def frozen_threshold() -> float:
@@ -155,7 +170,9 @@ def _read_gt(fid: str) -> list[list[float]]:
     return out
 
 
-def run_prediction(image: Any, threshold: float | None = None) -> dict[str, Any]:
+def run_prediction(
+    image: Any, threshold: float | None = None, preprocess: str = "544_padded"
+) -> dict[str, Any]:
     """Run inference on one image. NEVER raises -- returns a result dict.
 
     Returns keys: ok, error, n_detections, detections, frame_score, threshold,
@@ -204,44 +221,42 @@ def run_prediction(image: Any, threshold: float | None = None) -> dict[str, Any]
             result["error"] = "blank image"
             return result
 
+        from src.models.yolo_infer import predict_single_image
+
         model = get_model()
-        preds = model.predict(
-            source=arr,
+        raw_dets = predict_single_image(
+            model=model,
+            image=arr,
             conf=0.001,
             iou=NMS_IOU,
             max_det=MAX_DET,
-            imgsz=IMGSZ,
             device=_device,
-            verbose=False,
+            preprocess=preprocess,
         )
-        r = preds[0] if preds else None
-        boxes = getattr(r, "boxes", None) if r is not None else None
-        dets: list[dict[str, Any]] = []
-        if boxes is not None and len(boxes):
-            xyxy = boxes.xyxy.cpu().numpy()
-            sc = boxes.conf.cpu().numpy()
-            cl = boxes.cls.cpu().numpy().astype(int)
-            order = np.argsort(-sc)
-            for i in order:
-                x1, y1, x2, y2 = (float(v) for v in xyxy[i])
-                cls_id = int(cl[i])
-                dets.append(
-                    {
-                        "class": ID2NAME.get(cls_id, str(cls_id)),
-                        "stenosis_range": RANGE.get(ID2NAME.get(cls_id, ""), "?"),
-                        "score": round(float(sc[i]), 4),
-                        "x": round(x1, 1),
-                        "y": round(y1, 1),
-                        "w": round(max(0.0, x2 - x1), 1),
-                        "h": round(max(0.0, y2 - y1), 1),
-                    }
-                )
 
+        raw_dets.sort(key=lambda d: d[4], reverse=True)
+        all_dets: list[dict[str, Any]] = []
+        for x, y, w, h, sc, cls_id in raw_dets:
+            all_dets.append(
+                {
+                    "class": ID2NAME.get(cls_id, str(cls_id)),
+                    "stenosis_range": RANGE.get(ID2NAME.get(cls_id, ""), "?"),
+                    "score": round(float(sc), 4),
+                    "x": round(float(x), 1),
+                    "y": round(float(y), 1),
+                    "w": round(float(w), 1),
+                    "h": round(float(h), 1),
+                }
+            )
+
+        frame_score = max((d["score"] for d in all_dets), default=0.0)
+        result["frame_score"] = round(float(frame_score), 4) if all_dets else None
+
+        # Filter detections at the chosen threshold
+        dets = [d for d in all_dets if d["score"] >= thr]
         result["n_detections"] = len(dets)
         result["detections"] = dets
-        frame_score = max((d["score"] for d in dets), default=0.0)
-        result["frame_score"] = round(float(frame_score), 4)
-        result["verdict"] = "FLAGGED" if frame_score >= thr else "NOT FLAGGED"
+        result["verdict"] = "FLAGGED" if (frame_score is not None and frame_score >= thr) else "NOT FLAGGED"
         return result
     except Exception as exc:  # noqa: BLE001 - prototype must never crash
         result["ok"] = False
@@ -251,6 +266,7 @@ def run_prediction(image: Any, threshold: float | None = None) -> dict[str, Any]
         result["frame_score"] = None
         result["verdict"] = "ERROR"
         return result
+
 
 
 def annotate(image: Any, result: dict[str, Any], draw_gt: list[list[float]] | None = None) -> Any:

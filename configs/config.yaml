@@ -62,3 +62,4 @@ splits:
   report_file: "splits_report.md"
   max_search_iter: 10000
 
+yolo_weights: "outputs/runs/exp_7class_yolo11s_oversample_run1/weights/best.pt"

@@ -614,7 +614,26 @@ Real metrics generated from evaluation JSON (not hand-typed):
 - Ultralytics cross-check on the same split: custom predictor (512x512) mAP@0.5=0.0109 vs predictor (544_padded) mAP@0.5=0.0270 vs native Ultralytics val mAP@0.5=0.0438. The decisive test confirms preprocessing sensitivity: letterbox padding 512 into 544 centered with gray padding accounts for a 2.5x difference (0.0109 to 0.0270), locating the discrepancy to scale/padding behavior, but the remaining gap (0.0270 vs 0.0438) remains unresolved.  
 - Per-class and caveats: `outputs/eval/exp_7class_yolo11s_oversample_run1_val/metrics.md` and `_test/metrics.md`.
 
+### Research Prototype (Gradio Demo)
+
+An interactive research prototype is available in `app.py`.
+
+- **How to start**: Run [`scripts/run_app.bat`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/scripts/run_app.bat) (or run with project Python 3.14: `python app.py`). The local URL defaults to `http://127.0.0.1:7860`.
+- **Inputs**:
+  - Image upload (PNG/JPEG).
+  - *Random test sample* button (picks random test-split image from `outputs/yolo_dataset/test/images` and shows ground-truth boxes in green).
+  - Confidence slider (defaults to frozen threshold 0.0500 from `threshold.json`).
+- **Outputs**:
+  - Annotated image (red boxes = detections with stenosis range and confidence score; green boxes = ground truth).
+  - Detections table (Class, Stenosis range, Score, x, y, w, h).
+  - Frame score (maximum detection confidence) and FLAGGED / NOT FLAGGED verdict.
+- **Limitations**:
+  - Research prototype only, NOT a diagnostic medical device.
+  - Model exhibits preprocessing sensitivity (512 vs 544 padding changes val mAP50 by ~2.5x).
+  - Detections are experimental and NOT clinically reliable.
+
 ---
+
 
 ## 10. Roadmap (Phases 1-5)
 - **Phase 1: Project Setup & Dataset Indexing** ✅ *(Complete - v0.1.0)*

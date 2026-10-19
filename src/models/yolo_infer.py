@@ -218,3 +218,106 @@ def predict_canonical_split(
         logger.info("Saved formatted predictions to %s", out_p)
 
     return predictions
+
+
+def predict_single_image(
+    model: YOLO,
+    image: np.ndarray,
+    conf: float = 0.001,
+    iou: float = 0.7,
+    max_det: int = 100,
+    device: str | None = None,
+    preprocess: str = "544_padded",
+) -> list[list[float]]:
+    """Predict on a single RGB/BGR image array.
+
+    Args:
+        model: Loaded YOLO model.
+        image: Numpy array of shape (H, W, 3).
+        conf: Confidence threshold (default: 0.001).
+        iou: NMS IoU threshold (default: 0.7).
+        max_det: Max detections (default: 100).
+        device: '0', 'cpu', or None.
+        preprocess: '544_padded' or '512'.
+
+    Returns:
+        List of [x, y, w, h, score, class_id] in pixels of the input image.
+    """
+    if device is None:
+        device = "0" if torch.cuda.is_available() else "cpu"
+
+    orig_h, orig_w = image.shape[:2]
+    if orig_h == 0 or orig_w == 0:
+        return []
+
+    # Ensure 512x512 base resolution
+    if (orig_w, orig_h) != (512, 512):
+        import cv2
+
+        im_512 = cv2.resize(image, (512, 512), interpolation=cv2.INTER_LINEAR)
+    else:
+        im_512 = image
+
+    scale_x = orig_w / 512.0
+    scale_y = orig_h / 512.0
+
+    if preprocess == "544_padded":
+        from ultralytics.data.augment import LetterBox
+
+        lb = LetterBox(new_shape=(544, 544), auto=False, scaleup=False, center=True)
+        img_input = lb(image=im_512)
+        results = model.predict(
+            source=img_input,
+            conf=conf,
+            iou=iou,
+            max_det=max_det,
+            imgsz=544,
+            device=device,
+            verbose=False,
+        )
+        r = results[0] if results else None
+        if r is None or r.boxes is None or len(r.boxes) == 0:
+            return []
+        xyxy = r.boxes.xyxy.cpu().numpy()
+        scores = r.boxes.conf.cpu().numpy()
+        classes = r.boxes.cls.cpu().numpy()
+        dets: list[list[float]] = []
+        for j in range(len(xyxy)):
+            x1, y1, x2, y2 = xyxy[j]
+            x1_512 = float(np.clip(x1 - 16.0, 0.0, 512.0))
+            y1_512 = float(np.clip(y1 - 16.0, 0.0, 512.0))
+            x2_512 = float(np.clip(x2 - 16.0, 0.0, 512.0))
+            y2_512 = float(np.clip(y2 - 16.0, 0.0, 512.0))
+
+            x = x1_512 * scale_x
+            y = y1_512 * scale_y
+            w = max(0.0, x2_512 - x1_512) * scale_x
+            h = max(0.0, y2_512 - y1_512) * scale_y
+            dets.append([round(x, 2), round(y, 2), round(w, 2), round(h, 2), round(float(scores[j]), 6), int(classes[j])])
+        return dets
+    else:
+        results = model.predict(
+            source=im_512,
+            conf=conf,
+            iou=iou,
+            max_det=max_det,
+            imgsz=512,
+            device=device,
+            verbose=False,
+        )
+        r = results[0] if results else None
+        if r is None or r.boxes is None or len(r.boxes) == 0:
+            return []
+        xyxy = r.boxes.xyxy.cpu().numpy()
+        scores = r.boxes.conf.cpu().numpy()
+        classes = r.boxes.cls.cpu().numpy()
+        dets = []
+        for j in range(len(xyxy)):
+            x1, y1, x2, y2 = xyxy[j]
+            x = float(x1) * scale_x
+            y = float(y1) * scale_y
+            w = float(max(0.0, x2 - x1)) * scale_x
+            h = float(max(0.0, y2 - y1)) * scale_y
+            dets.append([round(x, 2), round(y, 2), round(w, 2), round(h, 2), round(float(scores[j]), 6), int(classes[j])])
+        return dets
+
