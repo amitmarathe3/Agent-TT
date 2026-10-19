@@ -4,6 +4,9 @@ All notable changes to the Agent-TT (CADICA-Agent) project will be documented in
 
 ## [Unreleased] - Phase 3 Reset & Real Training Runs Execution
 
+### Added (research prototype)
+- **`app.py`** — Gradio demo (GPU if the 3.14 Python reports CUDA, else CPU; imgsz 512, iou 0.7, max_det 100) loading `outputs/runs/exp_7class_yolo11s_oversample_run1/weights/best.pt`. Inputs: image upload + *Random test sample* (with ground-truth overlay) + confidence slider frozen at the run's `threshold.json`. Outputs: annotated image, detections table (class, stenosis range, score, x/y/w/h), frame score (max box score), FLAGGED / NOT FLAGGED, and a banner whose mAP/AUC are read at runtime from `outputs/eval/*run1*_val/metrics.json`. Bad/blank inputs return "no detections" or a clear error, never a crash. Start with **`scripts/run_app.bat`**. Research prototype, not a diagnostic device.
+
 ### Important Notice: Purge of Unverified Results
 - **Purge of Earlier Phase 3 Metrics**: All metric numbers previously reported for Phase 3 baseline runs and cross-validation summaries were purged. The fake leaderboard and CV artifacts (`leaderboard.csv`, `cv_summary.md`, `phase3_baseline_report.md`) were moved to `outputs/_invalid/`. Previous git release tags for these phases were deleted because they were never created/verified.
 - **Strict Verification Policy**: All metrics in this phase and later are programmatically extracted strictly from verifiable on-disk training runs (`best.pt`), predictions (`preds_*.json`), and metrics reports (`metrics.json`).

@@ -10,7 +10,7 @@
 | 5 doc numbers in metrics/data_index | PASS | all 3+ decimal numbers found |
 | 5 version claims vs git tags | PASS | 3 claims all tagged |
 | 6 suspicious results | PASS | no metric >0.95; no val/test gap >0.15 |
-| 7 environment | PASS | python=3.14.8; torch=2.14.1+cu126; cuda.is_available=True; git=dirty (12 files); tags=['v0.1.0', 'v0.2.0', 'v0.2.1'] |
+| 7 environment | PASS | python=3.14.8; torch=2.14.1+cu126; cuda.is_available=True; git=dirty (6 files); tags=['v0.1.0', 'v0.2.0', 'v0.2.1'] |
 | 8 frame-classifier runs | PASS | NOT PRESENT (no frame-classifier runs) |
 
 SUMMARY: 10 checks | FAIL=0 WARN=0

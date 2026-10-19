@@ -415,6 +415,15 @@ for batch in loader:
 
 ---
 
+## 5.1 Prototype (Gradio demo)
+
+- **Start**: `scripts/run_app.bat` (or `python app.py`) → open the printed local URL, default `http://127.0.0.1:7860`.
+- **Inputs**: upload an image, or click *Random test sample* (loads a frame from `outputs/yolo_dataset/test/images` and draws its ground-truth boxes in green); confidence slider defaults to the frozen `threshold.json` value.
+- **Outputs**: annotated image (red = detections), detections table (class, stenosis range, score, x/y/w/h), frame score (max box score), FLAGGED / NOT FLAGGED, and a banner whose mAP/AUC numbers are read at runtime from `outputs/eval/*run1*_val/metrics.json`.
+- **Limitation**: research prototype, not a diagnostic device — validation mAP@0.5 is low and detections are NOT reliable; bad or blank files return "no detections" or a clear error instead of crashing.
+
+---
+
 ## 6. Phase 1 Results
 
 ### CADICA Dataset Statistics
