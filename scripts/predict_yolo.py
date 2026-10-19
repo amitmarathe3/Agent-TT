@@ -68,6 +68,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--yolo-dir", type=str, default="outputs/yolo_dataset",
         help="Base directory of exported YOLO dataset.",
     )
+    parser.add_argument(
+        "--preprocess", type=str, default="512", choices=["512", "544_padded"],
+        help="Preprocessing mode: '512' (direct 512x512) or '544_padded' (letterbox 512 into 544 centered with 114 gray padding).",
+    )
     return parser.parse_args(argv)
 
 
@@ -100,6 +104,7 @@ def main(argv: list[str] | None = None) -> None:
     logger.info("  Conf:       %.4f", args.conf)
     logger.info("  IoU:        %.2f", args.iou)
     logger.info("  Max Det:    %d", args.max_det)
+    logger.info("  Preprocess: %s", args.preprocess)
 
     predictions = predict_canonical_split(
         weights_path=weights_p,
@@ -111,6 +116,7 @@ def main(argv: list[str] | None = None) -> None:
         max_det=args.max_det,
         imgsz=args.imgsz,
         device=args.device,
+        preprocess=args.preprocess,
     )
 
     print("\n" + "=" * 70)

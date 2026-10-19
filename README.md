@@ -611,7 +611,7 @@ Real metrics generated from evaluation JSON (not hand-typed):
   - `val`   mAP@0.5 0.0138 (0.0025, 0.0307); macro F1 0.0359 (0.0112, 0.0797); sensitivity 0.0510 (0.0117, 0.1271); frame ROC-AUC 0.6520 (0.5693, 0.7537).  
   - `test`  mAP@0.5 0.0125 (0.0021, 0.0389); macro F1 0.0358 (0.0150, 0.0641); sensitivity 0.0468 (0.0227, 0.0677); frame ROC-AUC 0.6887 (0.5921, 0.7671).  
 - Frozen confidence threshold: 0.0500, calibrated on validation only.  
-- Ultralytics cross-check on the same split: custom mAP@0.5=0.0109 vs the Ultralytics training-log peak mAP@0.5=0.0613. **The gap is not yet explained.** Note the earlier "training-oversampled split" hypothesis is disproven: `data_oversampled.yaml` sets `val: images/val`, i.e. the same canonical 722 frames (757 instances), and oversampling only touches `train`. Root cause under active investigation.  
+- Ultralytics cross-check on the same split: custom predictor (512x512) mAP@0.5=0.0109 vs predictor (544_padded) mAP@0.5=0.0270 vs native Ultralytics val mAP@0.5=0.0438. The decisive test confirms preprocessing sensitivity: letterbox padding 512 into 544 centered with gray padding accounts for a 2.5x difference (0.0109 to 0.0270), locating the discrepancy to scale/padding behavior, but the remaining gap (0.0270 vs 0.0438) remains unresolved.  
 - Per-class and caveats: `outputs/eval/exp_7class_yolo11s_oversample_run1_val/metrics.md` and `_test/metrics.md`.
 
 ---

@@ -26,5 +26,10 @@
     "source": "outputs/logs/old_metrics_val.json, outputs/logs/old_metrics_test.json",
     "replaced_by": "outputs/eval/exp_7class_yolo11s_oversample_run1_{val,test}/metrics.json",
     "values": [0.0374, 0.0099, 0.1028, 0.0022, 0.0315, 0.0108, 0.1457, 0.0510, 0.0132, 0.0367, 0.0159, 0.0721, 0.0021, 0.0428, 0.0145, 0.0470, 0.0131]
+  },
+  "decisive_test_gap_values": {
+    "reason": "Decisive test comparing custom predictor 512x512 vs 544_padded vs native Ultralytics val (0.0109 vs 0.0270 vs 0.0438 on val; 0.0095 vs 0.0107 on test). Padding 512 into 544 closes ~50% of the gap on val (2.5x increase from 0.0109 to 0.0270), locating the sensitivity to preprocessing padding, but leaving the remaining gap to 0.0438 unresolved.",
+    "source": "outputs/decisive_test_results.json",
+    "values": [0.0109, 0.0270, 0.0438, 0.0095, 0.0107]
   }
 }

@@ -33,6 +33,7 @@ def predict_canonical_split(
     imgsz: int = 640,
     device: str | None = None,
     batch_size: int = 16,
+    preprocess: str = "512",
 ) -> dict[str, list[list[float]]]:
     """Run model inference on canonical evaluation split and format predictions.
 
@@ -47,6 +48,7 @@ def predict_canonical_split(
         imgsz: Inference image size (default: 640).
         device: Device string (e.g. '0', 'cpu', None for auto).
         batch_size: Batch size for batched inference.
+        preprocess: '512' (direct feed) or '544_padded' (letterbox 512 into 544 with 114 gray padding).
 
     Returns:
         Dict mapping frame_id -> list of [x, y, w, h, score, class_id] in absolute pixels.
@@ -98,61 +100,107 @@ def predict_canonical_split(
         device = "0" if torch.cuda.is_available() else "cpu"
 
     logger.info(
-        "Running prediction on %d images (conf=%.4f, iou=%.2f, max_det=%d, imgsz=%d, device=%s)...",
+        "Running prediction on %d images (conf=%.4f, iou=%.2f, max_det=%d, imgsz=%d, preprocess=%s, device=%s)...",
         len(image_paths),
         conf,
         iou,
         max_det,
         imgsz,
+        preprocess,
         device,
     )
 
     predictions: dict[str, list[list[float]]] = {}
-    # Initialize all canonical frames with empty lists
     for fid in frame_ids:
         predictions[fid] = []
 
-    # Run inference in batches
-    path_strs = [str(p.resolve()) for p in image_paths]
-    results = model.predict(
-        source=path_strs,
-        conf=conf,
-        iou=iou,
-        max_det=max_det,
-        imgsz=imgsz,
-        device=device,
-        batch=batch_size,
-        verbose=False,
-    )
-
     total_detections = 0
-    for r, img_p in zip(results, image_paths):
-        fid = img_p.stem
-        boxes = r.boxes
-        if boxes is None or len(boxes) == 0:
-            continue
+    if preprocess == "544_padded":
+        import cv2
+        from ultralytics.data.augment import LetterBox
 
-        # Extract [x1, y1, x2, y2], scores, and classes
-        xyxy = boxes.xyxy.cpu().numpy()
-        scores = boxes.conf.cpu().numpy()
-        classes = boxes.cls.cpu().numpy()
+        lb = LetterBox(new_shape=(544, 544), auto=False, scaleup=False, center=True)
+        for i in range(0, len(image_paths), batch_size):
+            chunk_paths = image_paths[i : i + batch_size]
+            chunk_imgs = [lb(image=cv2.imread(str(p))) for p in chunk_paths]
+            chunk_results = model.predict(
+                source=chunk_imgs,
+                conf=conf,
+                iou=iou,
+                max_det=max_det,
+                imgsz=544,
+                device=device,
+                verbose=False,
+            )
+            for r, img_p in zip(chunk_results, chunk_paths):
+                fid = img_p.stem
+                boxes = r.boxes
+                if boxes is None or len(boxes) == 0:
+                    continue
 
-        frame_preds: list[list[float]] = []
-        for i in range(len(xyxy)):
-            x1, y1, x2, y2 = xyxy[i]
-            score = float(scores[i])
-            cls_id = int(classes[i])
+                xyxy = boxes.xyxy.cpu().numpy()
+                scores = boxes.conf.cpu().numpy()
+                classes = boxes.cls.cpu().numpy()
 
-            # Convert to [x, y, w, h] in absolute pixels
-            x = float(x1)
-            y = float(y1)
-            w = float(max(0.0, x2 - x1))
-            h = float(max(0.0, y2 - y1))
+                frame_preds: list[list[float]] = []
+                for j in range(len(xyxy)):
+                    x1, y1, x2, y2 = xyxy[j]
+                    score = float(scores[j])
+                    cls_id = int(classes[j])
 
-            frame_preds.append([round(x, 2), round(y, 2), round(w, 2), round(h, 2), round(score, 6), cls_id])
+                    # Map coordinates back from 544 (16px centered padding) to 512
+                    x1_512 = float(np.clip(x1 - 16.0, 0.0, 512.0))
+                    y1_512 = float(np.clip(y1 - 16.0, 0.0, 512.0))
+                    x2_512 = float(np.clip(x2 - 16.0, 0.0, 512.0))
+                    y2_512 = float(np.clip(y2 - 16.0, 0.0, 512.0))
 
-        predictions[fid] = frame_preds
-        total_detections += len(frame_preds)
+                    w = float(max(0.0, x2_512 - x1_512))
+                    h = float(max(0.0, y2_512 - y1_512))
+
+                    frame_preds.append([round(x1_512, 2), round(y1_512, 2), round(w, 2), round(h, 2), round(score, 6), cls_id])
+
+                predictions[fid] = frame_preds
+                total_detections += len(frame_preds)
+    else:
+        # Standard unpadded prediction (chunked to avoid GPU OOM)
+        effective_imgsz = 512 if imgsz == 640 else imgsz
+        for i in range(0, len(image_paths), batch_size):
+            chunk_paths = image_paths[i : i + batch_size]
+            path_strs = [str(p.resolve()) for p in chunk_paths]
+            chunk_results = model.predict(
+                source=path_strs,
+                conf=conf,
+                iou=iou,
+                max_det=max_det,
+                imgsz=effective_imgsz,
+                device=device,
+                verbose=False,
+            )
+            for r, img_p in zip(chunk_results, chunk_paths):
+                fid = img_p.stem
+                boxes = r.boxes
+                if boxes is None or len(boxes) == 0:
+                    continue
+
+                xyxy = boxes.xyxy.cpu().numpy()
+                scores = boxes.conf.cpu().numpy()
+                classes = boxes.cls.cpu().numpy()
+
+                frame_preds: list[list[float]] = []
+                for j in range(len(xyxy)):
+                    x1, y1, x2, y2 = xyxy[j]
+                    score = float(scores[j])
+                    cls_id = int(classes[j])
+
+                    x = float(x1)
+                    y = float(y1)
+                    w = float(max(0.0, x2 - x1))
+                    h = float(max(0.0, y2 - y1))
+
+                    frame_preds.append([round(x, 2), round(y, 2), round(w, 2), round(h, 2), round(score, 6), cls_id])
+
+                predictions[fid] = frame_preds
+                total_detections += len(frame_preds)
 
     logger.info(
         "Inference complete: %d total detections across %d frames (average: %.2f boxes/frame)",
