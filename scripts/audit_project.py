@@ -539,10 +539,27 @@ def check8() -> None:
     if eval_dir.exists():
         frame_dirs = [d.name for d in eval_dir.iterdir()
                       if d.is_dir() and "frame" in d.name.lower()]
-    if frame_dirs:
-        add("8 frame-classifier runs", "WARN", f"present: {frame_dirs} (overlap check TODO)")
-    else:
+    if not frame_dirs:
         add("8 frame-classifier runs", "PASS", "NOT PRESENT (no frame-classifier runs)")
+        return
+
+    # Check zero patient overlap between splits
+    split_path = ROOT / "data_index" / "splits" / "split_v1.csv"
+    if not split_path.exists():
+        add("8 frame-classifier runs", "FAIL", "split_v1.csv missing")
+        return
+    sp = pd.read_csv(split_path)
+    sets = {s: set(sp[sp["split"] == s]["patient_id"].astype(str)) for s in ("train", "val", "test")}
+    overlaps = []
+    for a in ("train", "val", "test"):
+        for b in ("train", "val", "test"):
+            if a < b and (sets[a] & sets[b]):
+                overlaps.append(f"{a}&{b}: {sorted(sets[a] & sets[b])}")
+
+    if overlaps:
+        add("8 frame-classifier runs", "FAIL", f"patient overlap: {overlaps}")
+    else:
+        add("8 frame-classifier runs", "PASS", f"{len(frame_dirs)} eval dir(s); zero patient overlap between splits")
 
 
 def main() -> int:

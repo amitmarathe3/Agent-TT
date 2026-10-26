@@ -103,7 +103,7 @@ def prepare_oversampled_dataset(
     data_yaml_path: Path | str,
     output_dir: Path | str,
     rare_categories: tuple[str, ...] = ("p99", "p100", "p90_98"),
-    multiplier: int = 3,
+    multiplier: int = 5,
     annotations_csv: Path | str = "data_index/annotations.csv",
 ) -> Path:
     """Create an oversampled training manifest repeating rare-class images up to multiplier x.
@@ -299,6 +299,8 @@ def train_yolo(
     batch: int | None = None,
     data_dir: str | Path = "outputs/yolo_dataset",
     output_dir: str | Path = "outputs/runs",
+    patience: int = 25,
+    oversample_multiplier: int = 3,
 ) -> dict[str, Any]:
     """Execute YOLO training pipeline with medical angiography configuration.
 
@@ -360,12 +362,12 @@ def train_yolo(
 
     active_data_yaml = data_yaml_path
     if oversample_rare:
-        logger.info("Applying rare-class oversampling (p99/p100/p90_98 x3)...")
+        logger.info("Applying rare-class oversampling (p99/p100/p90_98 x%d)...", oversample_multiplier)
         active_data_yaml = prepare_oversampled_dataset(
             data_yaml_path=data_yaml_path,
             output_dir=run_dir,
             rare_categories=("p99", "p100", "p90_98"),
-            multiplier=3,
+            multiplier=oversample_multiplier,
         )
 
     # 5. Handle smoke-test
@@ -403,7 +405,7 @@ def train_yolo(
         mosaic=0.5,
         close_mosaic=10,
         mixup=0.0,
-        patience=25,
+        patience=patience,
         cos_lr=True,
         fraction=actual_fraction,
         verbose=True,

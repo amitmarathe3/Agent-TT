@@ -57,7 +57,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--oversample-rare", action="store_true",
-        help="Repeat train frames containing p99/p100/p90_98 up to 3x (train only).",
+        help="Repeat train frames containing p99/p100/p90_98 (train only).",
+    )
+    parser.add_argument(
+        "--oversample-multiplier", type=int, default=3,
+        help="Repeat factor for rare-class frames (default: 3).",
     )
     parser.add_argument(
         "--smoke-test", action="store_true",
@@ -80,6 +84,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Directory containing exported YOLO data.yaml.",
     )
     parser.add_argument(
+        "--patience", type=int, default=25,
+        help="Early stopping patience (epochs without improvement). Default: 25.",
+    )
+    parser.add_argument(
         "--output-dir", type=str, default="outputs/runs",
         help="Base directory for training run outputs.",
     )
@@ -100,6 +108,7 @@ def main(argv: list[str] | None = None) -> None:
     logger.info("  Oversample Rare:  %s", args.oversample_rare)
     logger.info("  Smoke Test:       %s", args.smoke_test)
     logger.info("  Workers:          %d", args.workers)
+    logger.info("  Patience:         %d", args.patience)
 
     summary = train_yolo(
         scheme=args.scheme,
@@ -116,6 +125,8 @@ def main(argv: list[str] | None = None) -> None:
         batch=args.batch,
         data_dir=args.data_dir,
         output_dir=args.output_dir,
+        patience=args.patience,
+        oversample_multiplier=args.oversample_multiplier,
     )
 
     print("\n" + "=" * 70)

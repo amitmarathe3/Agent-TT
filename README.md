@@ -632,6 +632,23 @@ An interactive research prototype is available in `app.py`.
   - Model exhibits preprocessing sensitivity (512 vs 544 padding changes val mAP50 by ~2.5x).
   - Detections are experimental and NOT clinically reliable.
 
+### Frame & Video Screening (exp_frame_resnet18)
+
+Binary lesion screening pipeline using a torchvision ResNet18 backbone (ImageNet-pretrained, input 384x384, class-weighted BCE loss, AdamW lr 0.0003, ensemble of seeds 42 and 1337) evaluated on canonical validation and test splits:
+
+- **Winning Frame-Level Variant**: classifier_alone at threshold 0.1900 (calibrated on validation split):
+  - **Validation (722 frames / 6 patients)**: ROC-AUC = 0.8781 [0.8354, 0.9228], PR-AUC = 0.9485 [0.9213, 0.9766], Balanced Accuracy = 0.8413 [0.7805, 0.8942], Accuracy = 0.8837, Sensitivity = 0.9118 [0.8466, 1.0], Specificity = 0.7708 [0.5989, 0.8597], Precision = 0.9411, F1 = 0.9262 [0.8887, 0.9723], Prevalence = 0.8006, Majority Baseline = 0.8006. Confusion Matrix: TP=527, FP=33, TN=111, FN=51.
+  - **Test (852 frames / 6 patients)**: ROC-AUC = 0.9289 [0.8436, 0.9739], PR-AUC = 0.9679 [0.9379, 0.9912], Balanced Accuracy = 0.8759 [0.7800, 0.9473], Accuracy = 0.8967, Sensitivity = 0.9106 [0.8030, 0.9912], Specificity = 0.8412 [0.7348, 0.9200], Precision = 0.9583, F1 = 0.9338 [0.8737, 0.9823], Prevalence = 0.8005, Majority Baseline = 0.8005. Confusion Matrix: TP=621, FP=27, TN=143, FN=61.
+
+- **Winning Video-Level Variant**: classifier_alone with mean of top-k frame scores (=10$ selected on validation) at threshold 0.0800:
+  - **Validation (76 videos / 6 patients)**: ROC-AUC = 0.9107 [0.7704, 0.9856], PR-AUC = 0.9547 [0.9196, 0.9960], Balanced Accuracy = 0.8911 [0.7250, 0.9706], Accuracy = 0.9342, Sensitivity = 0.9821 [0.9386, 1.0], Specificity = 0.8000 [0.5000, 0.9615], Precision = 0.9322, F1 = 0.9565 [0.9130, 0.9836], Prevalence = 0.7368, Majority Baseline = 0.7368. Confusion Matrix: TP=55, FP=4, TN=16, FN=1.
+  - **Test (118 videos / 6 patients)**: ROC-AUC = 0.9339 [0.9047, 0.9790], PR-AUC = 0.9123 [0.8637, 0.9864], Balanced Accuracy = 0.8974 [0.8387, 0.9626], Accuracy = 0.8983, Sensitivity = 0.9500 [0.9000, 1.0], Specificity = 0.8448 [0.7447, 0.9538], Precision = 0.8636, F1 = 0.9048 [0.8375, 0.9667], Prevalence = 0.5085, Majority Baseline = 0.5085. Confusion Matrix: TP=57, FP=9, TN=49, FN=3.
+
+- **Caveats & Stated Limitations**:
+  - Resampled patient cluster bootstrap with 500 iterations over canonical splits (6 patients each in val and test).
+  - Evaluated on keyframe extractions and sampled negative frames (>= 30 frames from annotations); full continuous video sequences contain unannotated segments.
+  - Research prototype only, NOT a clinical diagnostic device.
+
 ---
 
 
@@ -675,6 +692,11 @@ For full version history and updates, view the [`CHANGELOG.md`](file:///c:/Users
 ---
 
 ## 13. Update Log
+- **2026-10-27**: **Phase 3 Frame & Video Screening (exp_frame_resnet18)**:
+  - Implemented and evaluated binary lesion screening pipeline using torchvision ResNet18 (ImageNet-pretrained, input 384x384, class-weighted BCE loss, AdamW lr 0.0003, ensemble of seeds 42 and 1337).
+  - Selected winning frame-level classifier (classifier_alone, threshold 0.1900) achieving val ROC-AUC 0.8781 and test ROC-AUC 0.9289 (balanced accuracy 0.8759).
+  - Selected winning video-level aggregator (top-k=10, threshold 0.0800) achieving val ROC-AUC 0.9107 and test ROC-AUC 0.9339 (balanced accuracy 0.8974).
+  - All numbers verified against metrics.json with 500-iteration patient cluster bootstrap confidence intervals.
 - **2026-10-15**: **Phase 3 Metrics Purge & Reset (Unreleased) — removed unverified numbers**:
   - Removed all previously reported Phase 3 baseline / benchmark-matrix / 5-fold CV metrics (mAP@0.5 figures such as 0.8124, 0.7415, 0.6510, 0.6842, 0.6390, 0.6890 and CV mean 0.6715 ± 0.0218, frame ROC-AUC 0.9240 ± 0.0165). These could not be reproduced from any on-disk `best.pt`/`metrics.json` and were purged; the fake `leaderboard.csv`, `cv_summary.md`, and `phase3_baseline_report.md` were moved to `outputs/_invalid/`.
   - Phase 3 is reset to **in progress**. Only metrics programmatically extracted from verifiable on-disk runs are reported, and the git release tags previously claimed for these phases did not exist and have been removed from all claims.

@@ -4,6 +4,21 @@ All notable changes to the Agent-TT (CADICA-Agent) project will be documented in
 
 ## [Unreleased] - Phase 3 Reset & Real Training Runs Execution
 
+### Added (ResNet18 Frame & Video Screening)
+- **src/models/frame_classifier.py**:
+  - ResNet18 binary classifier with ImageNet-pretrained weights, 384x384 input resolution, AdamW (lr 0.0003), class-weighted BCE loss, and seed ensembling (seeds 42 and 1337).
+  - Scoring variants: classifier alone, detector max box score, validation-tuned weighted ensemble, and temporal smoothed variants over neighbouring frames in the same video.
+  - Video-level aggregation using top-k frame mean (=10$ selected on validation).
+  - Validation-chosen decision thresholds (0.1900 for frame level, 0.0800 for video level).
+  - 500-iteration patient cluster bootstrap 95% confidence intervals.
+- **scripts/train_frame_classifier.py**:
+  - End-to-end training, dual-seed ensembling, variant sweep, video aggregation, and JSON metric exporter (outputs/eval/exp_frame_resnet18_{val,test}/metrics.json).
+- **	ests/test_frame_classifier.py**:
+  - Unit tests verifying 3 synthetic images through ResNet18, pairwise patient split disjointness, and temporal smoothing.
+- **Screening Performance**:
+  - Frame Winner (classifier_alone, threshold 0.1900): Val ROC-AUC 0.8781 [0.8354, 0.9228], BalAcc 0.8413 [0.7805, 0.8942]; Test ROC-AUC 0.9289 [0.8436, 0.9739], BalAcc 0.8759 [0.7800, 0.9473].
+  - Video Winner (classifier_alone, threshold 0.0800, top-k=10): Val ROC-AUC 0.9107 [0.7704, 0.9856], BalAcc 0.8911 [0.7250, 0.9706]; Test ROC-AUC 0.9339 [0.9047, 0.9790], BalAcc 0.8974 [0.8387, 0.9626].
+
 ### Added (research prototype)
 - Extended **`app.py`** to integrate `predict_single_image` from `src.models.yolo_infer` defaulting to `544_padded` letterbox preprocessing.
 - **`app.py`** — Gradio demo (GPU if the 3.14 Python reports CUDA, else CPU; imgsz 512, iou 0.7, max_det 100) loading `outputs/runs/exp_7class_yolo11s_oversample_run1/weights/best.pt`. Inputs: image upload + *Random test sample* (with ground-truth overlay) + confidence slider frozen at the run's `threshold.json`. Outputs: annotated image, detections table (class, stenosis range, score, x/y/w/h), frame score (max box score), FLAGGED / NOT FLAGGED, and a banner whose mAP/AUC are read at runtime from `outputs/eval/*run1*_val/metrics.json`. Bad/blank inputs return "no detections" or a clear error, never a crash. Start with **`scripts/run_app.bat`**. Research prototype, not a diagnostic device.
