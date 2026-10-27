@@ -33,9 +33,19 @@ WEIGHTS = ROOT / _cfg.get("yolo_weights", _WEIGHTS_DEFAULT)
 _SCHEME: dict[str, int] = dict(_cfg["class_schemes"]["schemes"]["7class"])
 ID2NAME = {v: k for k, v in _SCHEME.items()}
 
-# Readable stenosis ranges for the 7class scheme.
+# Readable stenosis ranges for clinical presentation.
 RANGE = {
-    "p0_20": "0-20%",
+    "p0_20": "Minimal Narrowing (< 20%)",
+    "p20_50": "Mild Stenosis (20% - 50%)",
+    "p50_70": "Moderate Stenosis (50% - 70%)",
+    "p70_90": "Severe Stenosis (70% - 90%)",
+    "p90_98": "Critical Stenosis (90% - 98%)",
+    "p99": "Subtotal Occlusion (99%)",
+    "p100": "Total Occlusion (100%)",
+}
+
+SHORT_RANGE = {
+    "p0_20": "< 20%",
     "p20_50": "20-50%",
     "p50_70": "50-70%",
     "p70_90": "70-90%",
@@ -171,6 +181,30 @@ def _read_gt(fid: str) -> list[list[float]]:
     return out
 
 
+def _box_iou(box1: list[float], box2: list[float]) -> float:
+    """Compute IoU between two [x, y, w, h] boxes."""
+    x1, y1, w1, h1 = box1
+    x2, y2, w2, h2 = box2
+    xi1 = max(x1, x2)
+    yi1 = max(y1, y2)
+    xi2 = min(x1 + w1, x2 + w2)
+    yi2 = min(y1 + h1, y2 + h2)
+    inter_area = max(0.0, xi2 - xi1) * max(0.0, yi2 - yi1)
+    union_area = (w1 * h1) + (w2 * h2) - inter_area
+    return inter_area / union_area if union_area > 0 else 0.0
+
+
+def deduplicate_detections(detections: list[dict[str, Any]], iou_thresh: float = 0.35) -> list[dict[str, Any]]:
+    """Suppress redundant overlapping boxes around the same lesion, keeping the highest confidence."""
+    sorted_dets = sorted(detections, key=lambda d: d["score"], reverse=True)
+    keep: list[dict[str, Any]] = []
+    for d in sorted_dets:
+        box_d = [d["x"], d["y"], d["w"], d["h"]]
+        if not any(_box_iou(box_d, [k["x"], k["y"], k["w"], k["h"]]) > iou_thresh for k in keep):
+            keep.append(d)
+    return keep
+
+
 def run_prediction(
     image: Any, threshold: float | None = None, preprocess: str = "544_padded"
 ) -> dict[str, Any]:
@@ -238,10 +272,12 @@ def run_prediction(
         raw_dets.sort(key=lambda d: d[4], reverse=True)
         all_dets: list[dict[str, Any]] = []
         for x, y, w, h, sc, cls_id in raw_dets:
+            cname = ID2NAME.get(cls_id, "")
             all_dets.append(
                 {
-                    "class": ID2NAME.get(cls_id, str(cls_id)),
-                    "stenosis_range": RANGE.get(ID2NAME.get(cls_id, ""), "?"),
+                    "class": cname,
+                    "stenosis_range": RANGE.get(cname, "Unknown"),
+                    "short_range": SHORT_RANGE.get(cname, "Lesion"),
                     "score": round(float(sc), 4),
                     "x": round(float(x), 1),
                     "y": round(float(y), 1),
@@ -253,11 +289,15 @@ def run_prediction(
         frame_score = max((d["score"] for d in all_dets), default=0.0)
         result["frame_score"] = round(float(frame_score), 4) if all_dets else None
 
-        # Filter detections at the chosen threshold
-        dets = [d for d in all_dets if d["score"] >= thr]
-        result["n_detections"] = len(dets)
-        result["detections"] = dets
-        result["verdict"] = "FLAGGED" if (frame_score is not None and frame_score >= thr) else "NOT FLAGGED"
+        # Filter detections at chosen threshold and deduplicate overlapping candidate boxes
+        filtered = [d for d in all_dets if d["score"] >= thr]
+        distinct_dets = deduplicate_detections(filtered, iou_thresh=0.35)
+        for idx, d in enumerate(distinct_dets, start=1):
+            d["index"] = idx
+
+        result["n_detections"] = len(distinct_dets)
+        result["detections"] = distinct_dets
+        result["verdict"] = "CANDIDATE DETECTED" if (frame_score is not None and frame_score >= thr) else "NO CANDIDATES"
         return result
     except Exception as exc:  # noqa: BLE001 - prototype must never crash
         result["ok"] = False
@@ -267,7 +307,6 @@ def run_prediction(
         result["frame_score"] = None
         result["verdict"] = "ERROR"
         return result
-
 
 
 def annotate(image: Any, result: dict[str, Any], draw_gt: list[list[float]] | None = None) -> Any:
@@ -286,9 +325,14 @@ def annotate(image: Any, result: dict[str, Any], draw_gt: list[list[float]] | No
 
         for det in result.get("detections", []):
             x, y, w, h = det["x"], det["y"], det["w"], det["h"]
+            idx = det.get("index", 1)
+            sc = det["score"]
+            short_sev = det.get("short_range", det.get("stenosis_range", "").split("(")[0].strip())
             d.rectangle([x, y, x + w, y + h], outline=(255, 40, 40), width=3)
-            d.text((x + 2, max(0, y - 12)), f"{det['stenosis_range']} {det['score']:.2f}",
-                   fill=(255, 220, 0))
+            # Clean label on the box: e.g. "#1: 70-90% (83%)"
+            badge_text = f"#{idx}: {short_sev} ({round(sc * 100)}%)"
+            d.rectangle([x, max(0, y - 16), x + len(badge_text) * 7 + 6, max(0, y)], fill=(220, 20, 60))
+            d.text((x + 3, max(0, y - 14)), badge_text, fill=(255, 255, 255))
         return img
     except Exception:
         return image
@@ -311,45 +355,56 @@ def random_test_sample() -> tuple[Any, str, list[list[float]]]:
 
 
 # ------------------------------------------------------------- UI
+_TABLE_HEADERS = ["Finding", "Narrowing Severity", "Confidence Level", "Visual Marker"]
+
+
 def _to_table(res: dict[str, Any]):
-    rows = [
-        [d["class"], d["stenosis_range"], d["score"], d["x"], d["y"], d["w"], d["h"]]
-        for d in res.get("detections", [])
-    ]
+    rows = []
+    for idx, d in enumerate(res.get("detections", []), start=1):
+        sc = d["score"]
+        conf_pct = f"{round(sc * 100)}%"
+        conf_desc = "High" if sc >= 0.70 else ("Moderate" if sc >= 0.35 else "Low")
+        conf_str = f"{conf_pct} ({conf_desc})"
+        rows.append([
+            f"Candidate #{idx}",
+            d["stenosis_range"],
+            conf_str,
+            f"Box #{idx} (Red)",
+        ])
     if not rows:
-        rows = [["(no detections)", "", "", "", "", "", ""]]
+        rows = [["(No lesions detected)", "No arterial narrowing identified above threshold", "—", "—"]]
     return rows
-
-
-_TABLE_HEADERS = ["Class", "Stenosis range", "Score", "x", "y", "w", "h"]
 
 
 def build_app():
     import gradio as gr
 
-    with gr.Blocks(title="CADICA research prototype") as demo:
-        gr.Markdown(banner_text())
+    with gr.Blocks(title="Coronary Angiogram Lesion Visualizer") as demo:
+        gr.Markdown("# 🫀 Coronary Angiogram Lesion Visualizer")
         gr.Markdown(
-            f"weights `{WEIGHTS.name}` · imgsz {IMGSZ} · iou {NMS_IOU} · "
-            f"max_det {MAX_DET} · frozen threshold `{frozen_threshold():.4f}`"
+            "**Visual Assistant for Coronary Artery Stenosis Detection**  \n"
+            "*Upload an angiography frame or load a sample test image to visualize suspected coronary stenosis locations and severity.*"
         )
         with gr.Row():
             with gr.Column():
-                in_img = gr.Image(type="pil", label="Upload image")
+                in_img = gr.Image(type="pil", label="Angiogram Input (Upload or Select Sample)")
                 with gr.Row():
-                    rnd_btn = gr.Button("🎲 Random test sample", variant="secondary")
-                    img_id = gr.Textbox(label="Image id", value="", interactive=False)
+                    rnd_btn = gr.Button("🎲 Load Sample Test Image", variant="secondary")
+                    img_id = gr.Textbox(label="Sample ID", value="", interactive=False)
                 thr = gr.Slider(
-                    minimum=0.001, maximum=0.95, value=frozen_threshold(), step=0.001,
-                    label="Confidence threshold (frozen default from threshold.json)",
+                    minimum=0.01, maximum=0.90, value=frozen_threshold(), step=0.01,
+                    label="Detection Sensitivity Threshold (Frozen validation default: 0.05)",
                 )
-                run_btn = gr.Button("Run detection", variant="primary")
+                run_btn = gr.Button("Analyze Frame", variant="primary")
             with gr.Column():
-                out_img = gr.Image(type="pil", label="Annotated (red = detection, green = ground truth)")
-                frame_score = gr.Number(label="Frame score (max box score)")
-                verdict = gr.Markdown("### waiting for input")
+                out_img = gr.Image(type="pil", label="Analyzed Angiogram (Red: AI Detection, Green: Verified Reference)")
+                verdict = gr.Markdown("### Ready for analysis\nUpload an angiogram or click **Load Sample Test Image**.")
                 status = gr.Markdown("")
-        tbl = gr.Dataframe(headers=_TABLE_HEADERS, label="Detections", interactive=False)
+        tbl = gr.Dataframe(headers=_TABLE_HEADERS, label="Detected Lesion Candidates (Ranked by Severity & Confidence)", interactive=False)
+        gr.Markdown(
+            "<small>*Clinical Note: Automated detections are intended for visual review and educational assistance. "
+            "Candidates can appear in non-diseased segments, and negative scans do not rule out pathology. Specialist review is required.*</small>"
+        )
 
         state = gr.State(None)
 
@@ -359,30 +414,34 @@ def build_app():
 
         def _run(img, t, gt):
             if img is None:
-                return None, _to_table({"detections": []}), None, "### ⚠️ no image", "no image provided"
+                return None, _to_table({"detections": []}), "### ⚠️ No Image Provided\nPlease upload an angiogram image or click 'Load Sample Test Image'.", ""
             res = run_prediction(img, t)
             if not res.get("ok"):
-                return None, _to_table(res), None, "### ⚠️ error", res.get("error") or ""
+                return None, _to_table(res), f"### ⚠️ Error\n{res.get('error') or ''}", ""
             annotated = annotate(img, res, gt or [])
             if res["n_detections"] == 0:
-                v = f"### ✅ NOT FLAGGED — **no detections**\nthreshold {res['threshold']:.3f}"
-            elif res["verdict"] == "FLAGGED":
-                v = f"### 🚩 FLAGGED\nthreshold {res['threshold']:.3f}"
+                v = (
+                    "### No Significant Lesion Candidates Detected\n"
+                    f"No arterial narrowing detected above sensitivity threshold ({res['threshold']:.2f})."
+                )
+                st = "Finding: **Unremarkable above threshold**"
             else:
-                v = f"### ✅ NOT FLAGGED\nthreshold {res['threshold']:.3f}"
-            st = (
-                f"detections: **{res['n_detections']}** · frame score (max box): "
-                f"**{res['frame_score']}**"
-            )
-            return annotated, _to_table(res), res["frame_score"], v, st
+                top_d = res["detections"][0]
+                n_det = res["n_detections"]
+                v = (
+                    f"### ⚠️ Suspected Lesion Identified ({n_det} distinct site{'s' if n_det > 1 else ''})\n"
+                    f"**Primary finding:** {top_d['stenosis_range']} with **{round(top_d['score'] * 100)}% confidence**."
+                )
+                st = f"Identified **{n_det}** candidate lesion site(s) on this angiogram frame."
+            return annotated, _to_table(res), v, st
 
         rnd_btn.click(_on_random, outputs=[in_img, img_id, state])
         run_btn.click(_run, inputs=[in_img, thr, state],
-                      outputs=[out_img, tbl, frame_score, verdict, status])
+                      outputs=[out_img, tbl, verdict, status])
         thr.change(_run, inputs=[in_img, thr, state],
-                   outputs=[out_img, tbl, frame_score, verdict, status])
+                   outputs=[out_img, tbl, verdict, status])
         in_img.change(_run, inputs=[in_img, thr, state],
-                      outputs=[out_img, tbl, frame_score, verdict, status])
+                      outputs=[out_img, tbl, verdict, status])
     return demo
 
 

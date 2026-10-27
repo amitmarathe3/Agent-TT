@@ -563,22 +563,24 @@ def main() -> None:
     {f'''<table class="table">
       <thead>
         <tr>
+          <th>Finding</th>
           <th>Frame ID</th>
-          <th>Stenosis Range Bin</th>
-          <th>Score</th>
-          <th>Bounding Box [x, y, w, h]</th>
+          <th>Stenosis Severity</th>
+          <th>Confidence Level</th>
+          <th>Visual Guide</th>
         </tr>
       </thead>
       <tbody>''' + "".join([
         f'''<tr>
-              <td>{c['frame_id']}</td>
+              <td><strong>Candidate #{idx}</strong></td>
+              <td><code>{c['frame_id']}</code></td>
               <td><strong>{c['stenosis_range']}</strong></td>
-              <td>{c['score']:.4f}</td>
-              <td><code>{c['box']}</code></td>
+              <td>{round(c['score'] * 100)}% ({'High' if c['score'] >= 0.70 else ('Moderate' if c['score'] >= 0.40 else 'Review')})</td>
+              <td>Red Box #{idx} on Image</td>
             </tr>'''
-        for c in all_candidates[:12]
+        for idx, c in enumerate(all_candidates[:12], start=1)
     ]) + '</tbody></table>' if all_candidates else ''}
-    {f'<p><small>Showing top {min(12, len(all_candidates))} of {len(all_candidates)} candidates.</small></p>' if len(all_candidates) > 12 else ''}
+    {f'<p><small>Showing top {min(12, len(all_candidates))} of {len(all_candidates)} candidates (ranked by confidence).</small></p>' if len(all_candidates) > 12 else ''}
   </div>
 
   <div class="box-reliability">
