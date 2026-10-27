@@ -4,6 +4,16 @@ All notable changes to the Agent-TT (CADICA-Agent) project will be documented in
 
 ## [Unreleased] - Phase 3 Reset & Real Training Runs Execution
 
+### Added (Patient Report Generator CLI & Sample Report)
+- **`scripts/patient_report.py` & `scripts/run_report.bat`**:
+  - Implemented one-page clinical patient report generator CLI accepting image directories or video sequences.
+  - Generates self-contained `report.html` (with embedded visual frames) and structured `report.json`.
+  - Enforces clinical safety constraints: never outputs 'diseased', 'healthy', 'positive', or 'negative'; displays dynamic detector reliability box (box mAP@0.5 and recall with 95% CIs read at runtime); omits patch severity grading with clear justification; warns that absence of candidates does not imply absence of disease.
+- **Sample Report ([`reports/sample_report.html`](reports/sample_report.html))**:
+  - Generated and saved sample patient report for test patient `p11`.
+- **`tests/test_patient_report.py`**:
+  - Added unit test executing report generation on 3 synthetic images and 1 blank image without crashing, verifying generated files, asserting absence of 'diseased'/'healthy' wording, and verifying presence of reliability section.
+
 ### Added (Shortcut Check, Detector Control & Invalidation of Screening)
 - **Invalidation Notice**: ResNet18 frame classifier (AUC 0.8781 val / 0.9289 test) and video screening (AUC 0.9107 val / 0.9339 test) results are **INVALID** due to an angiographer keyframe-selection shortcut. The model learned contrast presence and vessel density rather than lesion pathology.
 - **Detector Frame AUC Not Credible**: The previously reported detector frame ROC-AUC (0.6503 val, 0.6985 test) was evaluated against canonical hard negatives drawn primarily from distant non-keyframes. Against matched nonlesion keyframes, detector frame discrimination drops to test ROC-AUC 0.6356 [0.5292, 0.7616] and balanced accuracy 0.5830 [0.5303, 0.6470].

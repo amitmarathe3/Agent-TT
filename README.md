@@ -418,9 +418,43 @@ for batch in loader:
 ## 5.1 Prototype (Gradio demo)
 
 - **Start**: `scripts/run_app.bat` (or `python app.py`) → open the printed local URL, default `http://127.0.0.1:7860`.
-- **Inputs**: upload an image, or click *Random test sample* (loads a frame from `outputs/yolo_dataset/test/images` and draws its ground-truth boxes in green); confidence slider defaults to the frozen `threshold.json` value.
-- **Outputs**: annotated image (red = detections), detections table (class, stenosis range, score, x/y/w/h), frame score (max box score), FLAGGED / NOT FLAGGED, and a banner whose mAP/AUC numbers are read at runtime from `outputs/eval/*run1*_val/metrics.json`.
+- **Inputs**: upload an image, or click *Random test sample* (loads a frame from `outputs/yolo_dataset/images/test` and draws its ground-truth boxes in green); confidence slider defaults to the frozen `threshold.json` value.
+- **Outputs**: annotated image (red = detections), detections table (class, stenosis range, score, x/y/w/h), frame score (max box score), FLAGGED / NOT FLAGGED, and a banner showing box-level mAP read at runtime from `outputs/eval/*run1*_val/metrics.json` noting frame-level screening is unvalidated.
 - **Limitation**: research prototype, not a diagnostic device — validation mAP@0.5 is low and detections are NOT reliable; bad or blank files return "no detections" or a clear error instead of crashing.
+
+---
+
+## 5.2 Using the Agent on a New Patient
+
+Agent-TT generates structured one-page patient reports (`report.html` and `report.json`) combining bounding box candidates, dynamic model reliability metrics, and clinical safety notices.
+
+### Folder Layout
+Input can be either:
+- A directory of angiographic frame images (`.png`, `.jpg`, `.jpeg`, `.tif`, `.bmp`), optionally prefixed with the patient ID (`<patient_id>_*.png`).
+- An angiography video sequence (`.mp4`, `.avi`, `.mov`).
+- Optional patient metadata JSON file (`--meta metadata.json`).
+
+### Command Execution
+```bash
+# Windows batch runner
+scripts\run_report.bat --input outputs\yolo_dataset\images\test --patient-id p8 --out outputs\reports\p8
+
+# Or direct Python 3.14 invocation
+python scripts/patient_report.py --input outputs/yolo_dataset/images/test --patient-id p8 --out outputs/reports/p8
+```
+
+### Generated Outputs
+- `outputs/reports/<patient_id>/report.html` — Self-contained one-page HTML report with embedded visual frames and candidate detections. Sample available at [`reports/sample_report.html`](file:///c:/Users/HP/Documents/Final%20project/New%20folder/reports/sample_report.html).
+- `outputs/reports/<patient_id>/report.json` — Machine-readable structured findings and reliability statistics.
+
+### Clinical Reliability & Validation Boundaries
+Numbers are read at runtime directly from test evaluation artifacts (`outputs/eval/exp_7class_yolo11s_oversample_run1_test/metrics.json`):
+- **Detector Box mAP@0.5**: 0.0095 [95% CI: 0.0021, 0.0389]
+- **Detector Box Recall**: 0.0481 [95% CI: 0.0227, 0.0677]
+- **Interpretive Notice**: *"No lesion candidates found does NOT mean the patient is free of disease: the detector finds only a small fraction of true lesions."*
+- **Screening Invalidation**: Frame/video screening failed shortcut controls (chance performance on matched keyframes).
+- **Unmeasured Specificity**: No healthy control patients exist in the dataset (41/42 patients have confirmed CAD lesions).
+- **Mandatory Review**: Review of the angiogram by a qualified cardiologist is required. This report must not be used for clinical decisions.
 
 ---
 
