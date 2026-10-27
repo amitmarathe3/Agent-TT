@@ -4,6 +4,27 @@ All notable changes to the Agent-TT (CADICA-Agent) project will be documented in
 
 ## [Unreleased] - Phase 3 Reset & Real Training Runs Execution
 
+### Added (Shortcut Check & Matched-Negative Retraining)
+- **Indexer Bug Fix & Raw Data Re-Index**:
+  - Identified bug in `src/data/indexer.py` where `name.endswith("lesionVideos.txt")` erroneously matched `nonlesionVideos.txt`, misclassifying 113 nonlesion selected videos as lesion videos and reporting 0 nonlesion keyframes.
+  - Corrected matcher to `Path(name).name == "lesionVideos.txt"`, updating `frames_index.csv` and `videos_index.csv`. Recovered 2,130 nonlesion keyframes (1,616 train, 239 val, 275 test) across 382 selected videos (269 lesion, 113 nonlesion).
+- **Trivial-Feature Baseline (`scripts/trivial_baseline.py`)**:
+  - Logistic regression on 13 simple global image statistics (mean, std, 5th/10th/25th/50th/75th/90th/95th percentiles, CLAHE dark vessel pixels, edge densities) achieves Val ROC-AUC 0.7749 and Test ROC-AUC 0.8869 (within 0.05 of the ResNet18 classifier's 0.9289), confirming that simple frame-level contrast and vessel density explain most of the apparent discriminative power.
+- **Score-by-Group on Original Classifier (`scripts/score_by_group.py`)**:
+  - Keyframe vs Keyframe (Lesion vs Nonlesion): Val ROC-AUC = 0.5692 (mean pos 0.7561 vs neg 0.6597); Test ROC-AUC = 0.5176 (mean pos 0.6559 vs neg 0.6234), confirming near-chance separation.
+  - Keyframe vs Distant Non-Keyframe: Val ROC-AUC = 0.9254 (mean pos 0.7561 vs neg 0.1241); Test ROC-AUC = 0.9428 (mean pos 0.6559 vs neg 0.0890).
+  - By Video Position (Test): first third ROC-AUC = 0.9541, middle third ROC-AUC = 0.8379, last third ROC-AUC = 0.9442.
+- **Matched-Negative Retrain (`exp_frame_matched_negatives`)**:
+  - Retrained ResNet18 classifier with positives = annotated keyframes and negatives = selected nonlesion keyframes only (both keyframes). Best validation checkpoint at Epoch 2 (early stopped after Epoch 5, threshold 0.1100).
+  - Val: ROC-AUC = 0.6027 [0.4368, 0.7031], BalAcc = 0.6037 [0.4762, 0.6765], Sens = 0.8183 [0.6691, 0.9597], Spec = 0.3891 [0.0104, 0.5563], Prevalence = 0.7075, Majority Baseline = 0.7075.
+  - Test: ROC-AUC = 0.4894 [0.1801, 0.7079], BalAcc = 0.4848 [0.3042, 0.6227], Sens = 0.7405 [0.5915, 0.9324], Spec = 0.2291 [0.0, 0.4378], Prevalence = 0.7126, Majority Baseline = 0.7126.
+- **Video-Level Screening Redo (`outputs/eval/video_level_redo_selected/metrics.json`)**:
+  - Evaluated screening restricted to selected videos (56 val: 44 lesion, 12 nonlesion; 63 test: 48 lesion, 15 nonlesion) using top-10 keyframe mean scores with threshold 0.1000:
+  - Val: ROC-AUC = 0.5189 [0.3988, 0.6365], BalAcc = 0.6212 [0.4733, 0.7123], Sens = 0.9091 [0.8208, 1.0], Spec = 0.3333 [0.0, 0.5], F1 = 0.8696 [0.8, 0.9333].
+  - Test: ROC-AUC = 0.4333 [0.1330, 0.6626], BalAcc = 0.4917 [0.4222, 0.6128], Sens = 0.9167 [0.8444, 0.9790], Spec = 0.0667 [0.0, 0.3040], F1 = 0.8302 [0.7284, 0.9043].
+- **Credibility Statement**:
+  - The original screening numbers (0.9289 test frame AUC, 0.9339 test video AUC) are not credible indicators of CAD lesion detection; they reflect a keyframe selection shortcut. Credible numbers for true lesion detection on keyframes are 0.4894 frame AUC and 0.4333 video AUC.
+
 ### Added (ResNet18 Frame & Video Screening)
 - **src/models/frame_classifier.py**:
   - ResNet18 binary classifier with ImageNet-pretrained weights, 384x384 input resolution, AdamW (lr 0.0003), class-weighted BCE loss, and seed ensembling (seeds 42 and 1337).

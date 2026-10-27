@@ -649,6 +649,33 @@ Binary lesion screening pipeline using a torchvision ResNet18 backbone (ImageNet
   - Evaluated on keyframe extractions and sampled negative frames (>= 30 frames from annotations); full continuous video sequences contain unannotated segments.
   - Research prototype only, NOT a clinical diagnostic device.
 
+### Shortcut Investigation & Verification (Definitive Finding: Severe Shortcut)
+
+A thorough investigation revealed that the high test performance of the original ResNet18 screening model (0.9289 test frame AUC, 0.9339 test video AUC) was driven by an angiographic keyframe-selection artifact rather than CAD lesion pathology:
+
+1. **Dataset Root Cause & Indexer Bug Fix**:
+   - Direct inspection of raw control files (`pX_vY_selectedFrames.txt`, `lesionVideos.txt`, `nonlesionVideos.txt`) revealed that `CADICA.zip` contains 382 selected videos (269 lesion, 113 nonlesion) and 286 nonselected videos (668 total).
+   - A bug in `src/data/indexer.py` (`name.endswith("lesionVideos.txt")`) erroneously matched `nonlesionVideos.txt`, misclassifying all 113 nonlesion selected videos as lesion videos and resulting in 0 nonlesion keyframes in `frames_index.csv`.
+   - Correcting the matcher (`Path(name).name == "lesionVideos.txt"`) restored 2,130 nonlesion selected keyframes: Train = 1,616, Val = 239, Test = 275.
+2. **Trivial-Feature Baseline (`scripts/trivial_baseline.py`)**:
+   - Logistic regression using only 13 simple global image statistics (mean, std, 5th/10th/25th/50th/75th/90th/95th percentiles, CLAHE dark vessel pixels, Canny and Sobel edge densities):
+   - Val ROC-AUC = 0.7749, Test ROC-AUC = 0.8869 (within 0.05 of the deep classifier's 0.9289), confirming that simple frame-level contrast and vessel density explain most of the apparent discriminative power.
+3. **Score-by-Group on Original Classifier (`scripts/score_by_group.py`)**:
+   - *Keyframe vs Keyframe (Lesion vs Nonlesion)*: Val ROC-AUC = 0.5692 (mean score 0.7561 vs 0.6597); Test ROC-AUC = 0.5176 (mean score 0.6559 vs 0.6234). The model is completely unable to distinguish lesion keyframes from nonlesion keyframes (chance level).
+   - *Keyframe vs Distant Non-Keyframe*: Val ROC-AUC = 0.9254 (mean score 0.7561 vs 0.1241); Test ROC-AUC = 0.9428 (mean score 0.6559 vs 0.0890).
+   - *By Video Position (Test Split)*: First third ROC-AUC = 0.9541, Middle third ROC-AUC = 0.8379, Last third ROC-AUC = 0.9442.
+4. **Matched-Negative Retraining (`exp_frame_matched_negatives`)**:
+   - Positives = annotated keyframes; Negatives = selected keyframes from nonlesion videos only (both sides are angiographer-selected keyframes).
+   - Val (threshold 0.1100): ROC-AUC = 0.6027 [0.4368, 0.7031], Balanced Accuracy = 0.6037 [0.4762, 0.6765], Sensitivity = 0.8183 [0.6691, 0.9597], Specificity = 0.3891 [0.0104, 0.5563], Prevalence = 0.7075, Majority Baseline = 0.7075.
+   - Test (threshold 0.1100): ROC-AUC = 0.4894 [0.1801, 0.7079], Balanced Accuracy = 0.4848 [0.3042, 0.6227], Sensitivity = 0.7405 [0.5915, 0.9324], Specificity = 0.2291 [0.0, 0.4378], Prevalence = 0.7126, Majority Baseline = 0.7126.
+5. **Video-Level Redo on Selected Videos Only (`outputs/eval/video_level_redo_selected/metrics.json`)**:
+   - Restricted strictly to selected videos (Val: 44 lesion, 12 nonlesion = 56; Test: 48 lesion, 15 nonlesion = 63):
+   - Val (threshold 0.1000): ROC-AUC = 0.5189 [0.3988, 0.6365], Balanced Accuracy = 0.6212 [0.4733, 0.7123], Sensitivity = 0.9091 [0.8208, 1.0], Specificity = 0.3333 [0.0, 0.5], F1 = 0.8696 [0.8, 0.9333].
+   - Test (threshold 0.1000): ROC-AUC = 0.4333 [0.1330, 0.6626], Balanced Accuracy = 0.4917 [0.4222, 0.6128], Sensitivity = 0.9167 [0.8444, 0.9790], Specificity = 0.0667 [0.0, 0.3040], F1 = 0.8302 [0.7284, 0.9043].
+6. **Credibility Assessment**:
+   - The original screening numbers (0.9289 test frame AUC, 0.9339 test video AUC) are **NOT credible** metrics for CAD lesion detection.
+   - The credible performance for genuine lesion vs non-lesion discrimination on keyframes is given by `exp_frame_matched_negatives` (Test ROC-AUC = 0.4894, Balanced Accuracy = 0.4848) and the redone selected video evaluation (Test ROC-AUC = 0.4333, Balanced Accuracy = 0.4917), establishing that the frame classifier cannot reliably detect lesions when keyframe selection cues are controlled.
+
 ---
 
 
@@ -692,6 +719,12 @@ For full version history and updates, view the [`CHANGELOG.md`](file:///c:/Users
 ---
 
 ## 13. Update Log
+- **2026-10-27**: **Phase 3 Shortcut Check & Matched-Negative Retraining**:
+  - Investigated performance drivers of `exp_frame_resnet18`: trivial image statistics achieve 0.8869 test ROC-AUC, within 0.05 of the deep classifier (0.9289).
+  - Score-by-group analysis on original classifier revealed 0.5176 test ROC-AUC on keyframe vs keyframe (pure chance), while scoring 0.9428 on keyframe vs distant background frames.
+  - Fixed indexer bug (`src/data/indexer.py`) where `name.endswith("lesionVideos.txt")` misidentified nonlesion videos; re-indexed 2,130 true nonlesion keyframes across 382 selected videos.
+  - Retrained ResNet18 on matched negatives (`exp_frame_matched_negatives`): test ROC-AUC dropped to 0.4894 and balanced accuracy to 0.4848.
+  - Redid video-level screening restricted to selected videos: test ROC-AUC dropped to 0.4333 and balanced accuracy to 0.4917, confirming a keyframe selection shortcut.
 - **2026-10-27**: **Phase 3 Frame & Video Screening (exp_frame_resnet18)**:
   - Implemented and evaluated binary lesion screening pipeline using torchvision ResNet18 (ImageNet-pretrained, input 384x384, class-weighted BCE loss, AdamW lr 0.0003, ensemble of seeds 42 and 1337).
   - Selected winning frame-level classifier (classifier_alone, threshold 0.1900) achieving val ROC-AUC 0.8781 and test ROC-AUC 0.9289 (balanced accuracy 0.8759).

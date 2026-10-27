@@ -175,7 +175,7 @@ class DatasetIndexer:
             # lesionVideos per patient
             lesion_map: dict[str, set[str]] = defaultdict(set)
             for name in namelist:
-                if name.startswith(sel_root) and name.endswith("lesionVideos.txt"):
+                if name.startswith(sel_root) and Path(name).name == "lesionVideos.txt":
                     parts = Path(name).parts
                     # parts: [prefix?, selectedVideos, pX, lesionVideos.txt]
                     try:
