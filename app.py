@@ -75,23 +75,24 @@ def banner_text() -> str:
     if p is None or not p.exists():
         return (
             "Research prototype, not a diagnostic device. Validation metrics "
-            "unavailable. Results depend on preprocessing (512 vs 544 changed val mAP50 about 2.5x). "
+            "unavailable. Frame-level screening is unvalidated. "
+            "Results depend on preprocessing (512 vs 544 changed val mAP50 about 2.5x). "
             "Detections are NOT reliable."
         )
     try:
         m = json.loads(p.read_text(encoding="utf-8"))
         map50 = float(m["map"]["mAP_50"])
-        auc = float(m["frame"]["roc_auc"])
         return (
             f"**Research prototype, not a diagnostic device.** "
-            f"Val mAP@0.5 **{map50:.4f}**, frame AUC **{auc:.4f}**. "
+            f"Val mAP@0.5 **{map50:.4f}**. Frame-level screening is unvalidated. "
             f"Results depend on preprocessing (512 vs 544 changed val mAP50 about 2.5x). "
             f"**Detections are NOT reliable.**"
         )
     except Exception:  # pragma: no cover - banner must never crash
         return (
             "Research prototype, not a diagnostic device. Validation metrics "
-            "could not be read. Results depend on preprocessing (512 vs 544 changed val mAP50 about 2.5x). "
+            "could not be read. Frame-level screening is unvalidated. "
+            "Results depend on preprocessing (512 vs 544 changed val mAP50 about 2.5x). "
             "Detections are NOT reliable."
         )
 

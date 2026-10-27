@@ -166,7 +166,7 @@ python scripts/validate_dataset.py
 - **Expected Console Output**:
   - `Dataset Validation Status: PASS`
   - Total Patients: `42`
-  - Total Video Folders: `668` (196 selected, 472 non-selected)
+  - Total Video Folders: `668` (382 selected, 286 non-selected)
   - Total PNG Frames: `31,500`
   - Total Groundtruth Annotation Files: `3,996`
   - Missing/Inconsistent Items: `0`
@@ -432,10 +432,10 @@ for batch in loader:
 |---|:---:|---|
 | **Patients** | **`42`** | `p1` to `p42` (100% matched across metadata and directory hierarchies) |
 | **Total Videos** | **`668`** | All angiography sequences across 42 patients |
-| **Selected Videos** | **`196`** | Sequences with keyframes selected for annotation (29.3%) |
-| **Non-Selected Videos** | **`472`** | Unselected angiography sequences (70.7%) |
-| **Lesion Videos** | **`236`** | Sequences containing confirmed coronary artery lesions (35.3%) |
-| **Non-Lesion Videos** | **`432`** | Normal / control sequences without lesions (64.7%) |
+| **Selected Videos** | **`382`** | Sequences with keyframes selected for annotation (57.2%) |
+| **Non-Selected Videos** | **`286`** | Unselected angiography sequences (42.8%) |
+| **Lesion Videos (Selected)** | **`269`** | Selected sequences containing confirmed coronary lesions (70.4%) |
+| **Non-Lesion Videos (Selected)** | **`113`** | Selected sequences without lesions (29.6%) |
 | **Total Frames** | **`31,500`** | `5,595` selected frames + `25,905` nonselected frames |
 | **Frame Resolution** | **`512 × 512`** | Exactly 100.0% uniform dimensions across all frames |
 | **Annotated Frames** | **`3,996`** | Frames containing ground-truth bounding box labels (12.7% sparsity) |
@@ -610,6 +610,10 @@ Real metrics generated from evaluation JSON (not hand-typed):
 - Bootstrap 95% CI (n=500, patient resampling over the canonical eval universe of 722 frames / 6 patients for `val`, and 852 frames / 6 patients for `test`):  
   - `val`   mAP@0.5 0.0138 (0.0025, 0.0307); macro F1 0.0359 (0.0112, 0.0797); sensitivity 0.0510 (0.0117, 0.1271); frame ROC-AUC 0.6520 (0.5693, 0.7537).  
   - `test`  mAP@0.5 0.0125 (0.0021, 0.0389); macro F1 0.0358 (0.0150, 0.0641); sensitivity 0.0468 (0.0227, 0.0677); frame ROC-AUC 0.6887 (0.5921, 0.7671).  
+
+> [!WARNING]  
+> **DETECTOR FRAME AUC NOT CREDIBLE FOR LESION SCREENING**: The frame ROC-AUC numbers above (0.6503 val, 0.6985 test) were evaluated on canonical evaluation sets where negatives were primarily distant unannotated background frames. In controlled detector evaluation against matched nonlesion keyframes (`detector_control`), test ROC-AUC drops to **0.6356** [0.5292, 0.7616] and balanced accuracy is only **0.5830** [0.5303, 0.6470]. Frame-level screening is unvalidated.
+
 - Frozen confidence threshold: 0.0500, calibrated on validation only.  
 - Ultralytics cross-check on the same split: custom predictor (512x512) mAP@0.5=0.0109 vs predictor (544_padded) mAP@0.5=0.0270 vs native Ultralytics val mAP@0.5=0.0438. The decisive test confirms preprocessing sensitivity: letterbox padding 512 into 544 centered with gray padding accounts for a 2.5x difference (0.0109 to 0.0270), locating the discrepancy to scale/padding behavior, but the remaining gap (0.0270 vs 0.0438) remains unresolved.  
 - Per-class and caveats: `outputs/eval/exp_7class_yolo11s_oversample_run1_val/metrics.md` and `_test/metrics.md`.
@@ -634,13 +638,16 @@ An interactive research prototype is available in `app.py`.
 
 ### Frame & Video Screening (exp_frame_resnet18)
 
+> [!CAUTION]
+> **INVALIDATED DUE TO KEYFRAME SHORTCUT**: The frame classifier results below (ROC-AUC 0.8781 val / 0.9289 test, video ROC-AUC 0.9107 val / 0.9339 test) are **INVALID**. The model learned angiographer keyframe selection cues (contrast presence and dark vessel density) rather than coronary lesion pathology. See **Shortcut Finding & Clinical Reality** below.
+
 Binary lesion screening pipeline using a torchvision ResNet18 backbone (ImageNet-pretrained, input 384x384, class-weighted BCE loss, AdamW lr 0.0003, ensemble of seeds 42 and 1337) evaluated on canonical validation and test splits:
 
-- **Winning Frame-Level Variant**: classifier_alone at threshold 0.1900 (calibrated on validation split):
+- **Winning Frame-Level Variant (INVALIDATED)**: classifier_alone at threshold 0.1900 (calibrated on validation split):
   - **Validation (722 frames / 6 patients)**: ROC-AUC = 0.8781 [0.8354, 0.9228], PR-AUC = 0.9485 [0.9213, 0.9766], Balanced Accuracy = 0.8413 [0.7805, 0.8942], Accuracy = 0.8837, Sensitivity = 0.9118 [0.8466, 1.0], Specificity = 0.7708 [0.5989, 0.8597], Precision = 0.9411, F1 = 0.9262 [0.8887, 0.9723], Prevalence = 0.8006, Majority Baseline = 0.8006. Confusion Matrix: TP=527, FP=33, TN=111, FN=51.
   - **Test (852 frames / 6 patients)**: ROC-AUC = 0.9289 [0.8436, 0.9739], PR-AUC = 0.9679 [0.9379, 0.9912], Balanced Accuracy = 0.8759 [0.7800, 0.9473], Accuracy = 0.8967, Sensitivity = 0.9106 [0.8030, 0.9912], Specificity = 0.8412 [0.7348, 0.9200], Precision = 0.9583, F1 = 0.9338 [0.8737, 0.9823], Prevalence = 0.8005, Majority Baseline = 0.8005. Confusion Matrix: TP=621, FP=27, TN=143, FN=61.
 
-- **Winning Video-Level Variant**: classifier_alone with mean of top-k frame scores (=10$ selected on validation) at threshold 0.0800:
+- **Winning Video-Level Variant (INVALIDATED)**: classifier_alone with mean of top-k frame scores (=10$ selected on validation) at threshold 0.0800:
   - **Validation (76 videos / 6 patients)**: ROC-AUC = 0.9107 [0.7704, 0.9856], PR-AUC = 0.9547 [0.9196, 0.9960], Balanced Accuracy = 0.8911 [0.7250, 0.9706], Accuracy = 0.9342, Sensitivity = 0.9821 [0.9386, 1.0], Specificity = 0.8000 [0.5000, 0.9615], Precision = 0.9322, F1 = 0.9565 [0.9130, 0.9836], Prevalence = 0.7368, Majority Baseline = 0.7368. Confusion Matrix: TP=55, FP=4, TN=16, FN=1.
   - **Test (118 videos / 6 patients)**: ROC-AUC = 0.9339 [0.9047, 0.9790], PR-AUC = 0.9123 [0.8637, 0.9864], Balanced Accuracy = 0.8974 [0.8387, 0.9626], Accuracy = 0.8983, Sensitivity = 0.9500 [0.9000, 1.0], Specificity = 0.8448 [0.7447, 0.9538], Precision = 0.8636, F1 = 0.9048 [0.8375, 0.9667], Prevalence = 0.5085, Majority Baseline = 0.5085. Confusion Matrix: TP=57, FP=9, TN=49, FN=3.
 
@@ -649,32 +656,36 @@ Binary lesion screening pipeline using a torchvision ResNet18 backbone (ImageNet
   - Evaluated on keyframe extractions and sampled negative frames (>= 30 frames from annotations); full continuous video sequences contain unannotated segments.
   - Research prototype only, NOT a clinical diagnostic device.
 
-### Shortcut Investigation & Verification (Definitive Finding: Severe Shortcut)
+### Shortcut Finding & Clinical Reality (Dataset Limitation)
 
-A thorough investigation revealed that the high test performance of the original ResNet18 screening model (0.9289 test frame AUC, 0.9339 test video AUC) was driven by an angiographic keyframe-selection artifact rather than CAD lesion pathology:
+A rigorous series of controls proved that frame-level and video-level screening performance was dominated by an angiographer keyframe-selection artifact:
 
-1. **Dataset Root Cause & Indexer Bug Fix**:
-   - Direct inspection of raw control files (`pX_vY_selectedFrames.txt`, `lesionVideos.txt`, `nonlesionVideos.txt`) revealed that `CADICA.zip` contains 382 selected videos (269 lesion, 113 nonlesion) and 286 nonselected videos (668 total).
-   - A bug in `src/data/indexer.py` (`name.endswith("lesionVideos.txt")`) erroneously matched `nonlesionVideos.txt`, misclassifying all 113 nonlesion selected videos as lesion videos and resulting in 0 nonlesion keyframes in `frames_index.csv`.
-   - Correcting the matcher (`Path(name).name == "lesionVideos.txt"`) restored 2,130 nonlesion selected keyframes: Train = 1,616, Val = 239, Test = 275.
-2. **Trivial-Feature Baseline (`scripts/trivial_baseline.py`)**:
+1. **Dataset Counts & Raw Reconciliation**:
+   - Direct inspection of raw control files (`pX_vY_selectedFrames.txt`, `lesionVideos.txt`, `nonlesionVideos.txt`) confirms that `CADICA.zip` contains **382 selected videos** (263 train, 56 val, 63 test; 269 lesion, 113 nonlesion) and **286 nonselected videos** (668 total). The "196 selected videos" figure was an outdated initial placeholder.
+   - Fixed indexer bug in `src/data/indexer.py` (`Path(name).name == "lesionVideos.txt"`) that previously misclassified all 113 nonlesion selected videos as lesion videos, recovering 2,130 nonlesion keyframes: Train = 1,616, Val = 239, Test = 275.
+2. **Trivial-Feature Baseline (`outputs/eval/trivial_baseline/metrics.json`)**:
    - Logistic regression using only 13 simple global image statistics (mean, std, 5th/10th/25th/50th/75th/90th/95th percentiles, CLAHE dark vessel pixels, Canny and Sobel edge densities):
-   - Val ROC-AUC = 0.7749, Test ROC-AUC = 0.8869 (within 0.05 of the deep classifier's 0.9289), confirming that simple frame-level contrast and vessel density explain most of the apparent discriminative power.
-3. **Score-by-Group on Original Classifier (`scripts/score_by_group.py`)**:
-   - *Keyframe vs Keyframe (Lesion vs Nonlesion)*: Val ROC-AUC = 0.5692 (mean score 0.7561 vs 0.6597); Test ROC-AUC = 0.5176 (mean score 0.6559 vs 0.6234). The model is completely unable to distinguish lesion keyframes from nonlesion keyframes (chance level).
+   - Val ROC-AUC = **0.7749**, Test ROC-AUC = **0.8869** (within 0.05 of the deep classifier's 0.9289), proving that simple frame-level contrast and vessel density explain most of the apparent discriminative power.
+3. **Score-by-Group on Original Classifier (`outputs/eval/score_by_group/metrics.json`)**:
+   - *Keyframe vs Keyframe (Lesion vs Nonlesion)*: Val ROC-AUC = 0.5692 (mean score 0.7561 vs 0.6597); Test ROC-AUC = **0.5176** (mean score 0.6559 vs 0.6234). The model is completely unable to distinguish lesion keyframes from nonlesion keyframes (pure chance).
    - *Keyframe vs Distant Non-Keyframe*: Val ROC-AUC = 0.9254 (mean score 0.7561 vs 0.1241); Test ROC-AUC = 0.9428 (mean score 0.6559 vs 0.0890).
    - *By Video Position (Test Split)*: First third ROC-AUC = 0.9541, Middle third ROC-AUC = 0.8379, Last third ROC-AUC = 0.9442.
-4. **Matched-Negative Retraining (`exp_frame_matched_negatives`)**:
+4. **Matched-Negative Retraining (`outputs/eval/exp_frame_matched_negatives_{val,test}/metrics.json`)**:
    - Positives = annotated keyframes; Negatives = selected keyframes from nonlesion videos only (both sides are angiographer-selected keyframes).
    - Val (threshold 0.1100): ROC-AUC = 0.6027 [0.4368, 0.7031], Balanced Accuracy = 0.6037 [0.4762, 0.6765], Sensitivity = 0.8183 [0.6691, 0.9597], Specificity = 0.3891 [0.0104, 0.5563], Prevalence = 0.7075, Majority Baseline = 0.7075.
-   - Test (threshold 0.1100): ROC-AUC = 0.4894 [0.1801, 0.7079], Balanced Accuracy = 0.4848 [0.3042, 0.6227], Sensitivity = 0.7405 [0.5915, 0.9324], Specificity = 0.2291 [0.0, 0.4378], Prevalence = 0.7126, Majority Baseline = 0.7126.
+   - Test (threshold 0.1100): ROC-AUC = **0.4894** [0.1801, 0.7079], Balanced Accuracy = **0.4848** [0.3042, 0.6227], Sensitivity = 0.7405 [0.5915, 0.9324], Specificity = 0.2291 [0.0, 0.4378], Prevalence = 0.7126, Majority Baseline = 0.7126.
 5. **Video-Level Redo on Selected Videos Only (`outputs/eval/video_level_redo_selected/metrics.json`)**:
    - Restricted strictly to selected videos (Val: 44 lesion, 12 nonlesion = 56; Test: 48 lesion, 15 nonlesion = 63):
    - Val (threshold 0.1000): ROC-AUC = 0.5189 [0.3988, 0.6365], Balanced Accuracy = 0.6212 [0.4733, 0.7123], Sensitivity = 0.9091 [0.8208, 1.0], Specificity = 0.3333 [0.0, 0.5], F1 = 0.8696 [0.8, 0.9333].
-   - Test (threshold 0.1000): ROC-AUC = 0.4333 [0.1330, 0.6626], Balanced Accuracy = 0.4917 [0.4222, 0.6128], Sensitivity = 0.9167 [0.8444, 0.9790], Specificity = 0.0667 [0.0, 0.3040], F1 = 0.8302 [0.7284, 0.9043].
-6. **Credibility Assessment**:
-   - The original screening numbers (0.9289 test frame AUC, 0.9339 test video AUC) are **NOT credible** metrics for CAD lesion detection.
-   - The credible performance for genuine lesion vs non-lesion discrimination on keyframes is given by `exp_frame_matched_negatives` (Test ROC-AUC = 0.4894, Balanced Accuracy = 0.4848) and the redone selected video evaluation (Test ROC-AUC = 0.4333, Balanced Accuracy = 0.4917), establishing that the frame classifier cannot reliably detect lesions when keyframe selection cues are controlled.
+   - Test (threshold 0.1000): ROC-AUC = **0.4333** [0.1330, 0.6626], Balanced Accuracy = **0.4917** [0.4222, 0.6128], Sensitivity = 0.9167 [0.8444, 0.9790], Specificity = 0.0667 [0.0, 0.3040], F1 = 0.8302 [0.7284, 0.9043].
+6. **Detector Control (`outputs/eval/detector_control/metrics.json`)**:
+   - Evaluating YOLO detector frame score (max box score with 544_padded predictions):
+   - *Keyframe vs Matched Nonlesion Keyframe*: Val ROC-AUC = 0.5850 (BalAcc = 0.5691 at threshold 0.0458); Test ROC-AUC = **0.6356** [0.5292, 0.7616], Test Balanced Accuracy = **0.5830** [0.5303, 0.6470], Sensitivity = 0.3988, Specificity = 0.7673.
+   - *Keyframe vs Distant Non-Keyframe*: Val ROC-AUC = 0.7287 (BalAcc = 0.6866 at threshold 0.0019); Test ROC-AUC = **0.7794** [0.7075, 0.8284], Test Balanced Accuracy = **0.7094** [0.6534, 0.7469], Sensitivity = 0.8666, Specificity = 0.5521.
+7. **Clinical Reality & Dataset Limitation**:
+   - Frame-level and video-level lesion screening is **NOT supported** by the CADICA dataset as constructed:
+     1. *Patient-level disease confounding*: 41 of the 42 patients in CADICA have confirmed CAD lesions in other videos (only patient `p3` has zero lesions across all sequences). 'Nonlesion videos' are simply alternate angiographic views of patients with coronary artery disease, not healthy controls.
+     2. *Projection-dependent visibility*: Coronary angiography relies on multi-angle projections (e.g., LAO cranial, RAO caudal). A critical lesion clearly visible in one projection may be foreshortened, obscured by vessel overlap, or outside the field of view in another projection. Labeling an unannotated video or keyframe from a diseased patient as 'negative' introduces major clinical label noise rather than true absence of disease.
 
 ---
 

@@ -31,5 +31,11 @@
     "reason": "Decisive test comparing custom predictor 512x512 vs 544_padded vs native Ultralytics val (0.0109 vs 0.0270 vs 0.0438 on val; 0.0095 vs 0.0107 on test). Padding 512 into 544 closes ~50% of the gap on val (2.5x increase from 0.0109 to 0.0270), locating the sensitivity to preprocessing padding, but leaving the remaining gap to 0.0438 unresolved.",
     "source": "outputs/decisive_test_results.json",
     "values": [0.0109, 0.0270, 0.0438, 0.0095, 0.0107]
+  },
+  "invalidated_frame_screening_shortcut": {
+    "reason": "ResNet18 frame classifier (AUC 0.8781 val, 0.9289 test) and video screening (AUC 0.9107 val, 0.9339 test) results marked INVALID due to angiographer keyframe-selection shortcut. Model learned contrast injection and vessel density cues rather than CAD lesion pathology.",
+    "source": "outputs/eval/exp_frame_resnet18_{val,test}/metrics.json",
+    "replaced_by": "outputs/eval/detector_control/metrics.json, outputs/eval/exp_frame_matched_negatives_{val,test}/metrics.json",
+    "values": [0.8781, 0.9289, 0.9107, 0.9339, 0.8413, 0.8759, 0.8911, 0.8974, 0.9485, 0.9679, 0.9547, 0.9123]
   }
 }

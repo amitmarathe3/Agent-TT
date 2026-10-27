@@ -4,7 +4,12 @@ All notable changes to the Agent-TT (CADICA-Agent) project will be documented in
 
 ## [Unreleased] - Phase 3 Reset & Real Training Runs Execution
 
-### Added (Shortcut Check & Matched-Negative Retraining)
+### Added (Shortcut Check, Detector Control & Invalidation of Screening)
+- **Invalidation Notice**: ResNet18 frame classifier (AUC 0.8781 val / 0.9289 test) and video screening (AUC 0.9107 val / 0.9339 test) results are **INVALID** due to an angiographer keyframe-selection shortcut. The model learned contrast presence and vessel density rather than lesion pathology.
+- **Detector Frame AUC Not Credible**: The previously reported detector frame ROC-AUC (0.6503 val, 0.6985 test) was evaluated against canonical hard negatives drawn primarily from distant non-keyframes. Against matched nonlesion keyframes, detector frame discrimination drops to test ROC-AUC 0.6356 [0.5292, 0.7616] and balanced accuracy 0.5830 [0.5303, 0.6470].
+- **Detector Control Evaluation (`outputs/eval/detector_control/metrics.json`)**:
+  - Keyframe vs Matched Nonlesion Keyframe: Val ROC-AUC 0.5850, BalAcc 0.5691 (threshold 0.0458); Test ROC-AUC 0.6356 [0.5292, 0.7616], BalAcc 0.5830 [0.5303, 0.6470], Sensitivity 0.3988, Specificity 0.7673.
+  - Keyframe vs Distant Non-Keyframe: Val ROC-AUC 0.7287, BalAcc 0.6866 (threshold 0.0019); Test ROC-AUC 0.7794 [0.7075, 0.8284], BalAcc 0.7094 [0.6534, 0.7469], Sensitivity 0.8666, Specificity 0.5521.
 - **Indexer Bug Fix & Raw Data Re-Index**:
   - Identified bug in `src/data/indexer.py` where `name.endswith("lesionVideos.txt")` erroneously matched `nonlesionVideos.txt`, misclassifying 113 nonlesion selected videos as lesion videos and reporting 0 nonlesion keyframes.
   - Corrected matcher to `Path(name).name == "lesionVideos.txt"`, updating `frames_index.csv` and `videos_index.csv`. Recovered 2,130 nonlesion keyframes (1,616 train, 239 val, 275 test) across 382 selected videos (269 lesion, 113 nonlesion).
@@ -22,10 +27,10 @@ All notable changes to the Agent-TT (CADICA-Agent) project will be documented in
   - Evaluated screening restricted to selected videos (56 val: 44 lesion, 12 nonlesion; 63 test: 48 lesion, 15 nonlesion) using top-10 keyframe mean scores with threshold 0.1000:
   - Val: ROC-AUC = 0.5189 [0.3988, 0.6365], BalAcc = 0.6212 [0.4733, 0.7123], Sens = 0.9091 [0.8208, 1.0], Spec = 0.3333 [0.0, 0.5], F1 = 0.8696 [0.8, 0.9333].
   - Test: ROC-AUC = 0.4333 [0.1330, 0.6626], BalAcc = 0.4917 [0.4222, 0.6128], Sens = 0.9167 [0.8444, 0.9790], Spec = 0.0667 [0.0, 0.3040], F1 = 0.8302 [0.7284, 0.9043].
-- **Credibility Statement**:
-  - The original screening numbers (0.9289 test frame AUC, 0.9339 test video AUC) are not credible indicators of CAD lesion detection; they reflect a keyframe selection shortcut. Credible numbers for true lesion detection on keyframes are 0.4894 frame AUC and 0.4333 video AUC.
+- **Clinical Reality (Dataset Limitation)**:
+  - Frame/video lesion screening is NOT supported by the CADICA dataset as constructed: (1) 41 of 42 patients have confirmed CAD lesions, meaning 'nonlesion' videos are alternate views of diseased patients; (2) lesion visibility depends entirely on angiographic projection angle, so unannotated views cannot serve as negative screening controls without high clinical label noise.
 
-### Added (ResNet18 Frame & Video Screening)
+### Added (ResNet18 Frame & Video Screening - INVALIDATED)
 - **src/models/frame_classifier.py**:
   - ResNet18 binary classifier with ImageNet-pretrained weights, 384x384 input resolution, AdamW (lr 0.0003), class-weighted BCE loss, and seed ensembling (seeds 42 and 1337).
   - Scoring variants: classifier alone, detector max box score, validation-tuned weighted ensemble, and temporal smoothed variants over neighbouring frames in the same video.
