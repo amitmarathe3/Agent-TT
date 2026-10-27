@@ -3,16 +3,34 @@
 All notable changes to the Agent-TT (CADICA-Agent) project will be documented in this file.
 
 ## [Unreleased] - Phase 3 Reset & Real Training Runs Execution
-
-### Added (Patient Report Generator CLI & Sample Report)
-- **`scripts/patient_report.py` & `scripts/run_report.bat`**:
-  - Implemented one-page clinical patient report generator CLI accepting image directories or video sequences.
-  - Generates self-contained `report.html` (with embedded visual frames) and structured `report.json`.
-  - Enforces clinical safety constraints: never outputs 'diseased', 'healthy', 'positive', or 'negative'; displays dynamic detector reliability box (box mAP@0.5 and recall with 95% CIs read at runtime); omits patch severity grading with clear justification; warns that absence of candidates does not imply absence of disease.
-- **Sample Report ([`reports/sample_report.html`](reports/sample_report.html))**:
-  - Generated and saved sample patient report for test patient `p11`.
-- **`tests/test_patient_report.py`**:
-  - Added unit test executing report generation on 3 synthetic images and 1 blank image without crashing, verifying generated files, asserting absence of 'diseased'/'healthy' wording, and verifying presence of reliability section.
+ 
++### Changed (Calibrated 544_padded Reliability Numbers, False-Alarm Warning & Report Audit)
++- **544_padded Evaluation & Calibrated Threshold**:
++  - Re-evaluated `exp_7class_yolo11s_oversample_run1_544` on val and test splits with `544_padded` letterbox preprocessing.
++  - Optimal confidence threshold calibrated on VAL only at 0.0500 (best Val Macro F1: 0.0418) and frozen to `outputs/runs/exp_7class_yolo11s_oversample_run1_544/threshold.json`.
++  - Evaluated TEST once at frozen threshold with 500-iteration patient cluster bootstrap 95% CIs:
++    - Bounding Box Precision: 0.0839 [95% CI: 0.0320, 0.1898]
++    - Bounding Box Recall: 0.0462 [95% CI: 0.0233, 0.0645]
++    - Bounding Box F1: 0.0596 [95% CI: 0.0270, 0.0892]
++    - Bounding Box mAP@0.5: 0.0107 [95% CI: 0.0029, 0.0438]
++    - False-Alarm Share FP/(TP+FP): 0.9161 [95% CI: 0.8102, 0.9680]
++- **Patient Report Reliability Box & False-Alarm Warning**:
++  - Added false-alarm share to report reliability box in `patient_report.py` and structured `report.json`:
++    *"On held-out patients, about 92% of lesion candidates were false alarms. Candidates can appear in patients without disease, so their presence or number is not evidence of disease."*
++  - Re-generated reports for all 6 test patients (`p8`, `p11`, `p16`, `p22`, `p34`, `p36`) and updated `reports/sample_report.html`.
++- **Extended Test Suite & Audit**:
++  - Extended `tests/test_patient_report.py` to scan all generated `report.html` and `report.json` files for forbidden clinical words (`diseased`, `healthy`, `positive`, `negative`, case-insensitive) and verify presence of the reliability box and false-alarm sentence.
++  - Extended `scripts/audit_project.py` with Check 9: verifies that every number and CI in the reliability block of `outputs/reports/*/report.json` equals the corresponding `metrics.json` value within 1e-4 tolerance.
++
+ ### Added (Patient Report Generator CLI & Sample Report)
+ - **`scripts/patient_report.py` & `scripts/run_report.bat`**:
+   - Implemented one-page clinical patient report generator CLI accepting image directories or video sequences.
+   - Generates self-contained `report.html` (with embedded visual frames) and structured `report.json`.
+   - Enforces clinical safety constraints: never outputs 'diseased', 'healthy', 'positive', or 'negative'; displays dynamic detector reliability box (box mAP@0.5 and recall with 95% CIs read at runtime); omits patch severity grading with clear justification; warns that absence of candidates does not imply absence of disease.
+ - **Sample Report ([`reports/sample_report.html`](reports/sample_report.html))**:
+   - Generated and saved sample patient report for test patient `p11`.
+ - **`tests/test_patient_report.py`**:
+   - Added unit test executing report generation on 3 synthetic images and 1 blank image without crashing, verifying generated files, asserting absence of 'diseased'/'healthy' wording, and verifying presence of reliability section.
 
 ### Added (Shortcut Check, Detector Control & Invalidation of Screening)
 - **Invalidation Notice**: ResNet18 frame classifier (AUC 0.8781 val / 0.9289 test) and video screening (AUC 0.9107 val / 0.9339 test) results are **INVALID** due to an angiographer keyframe-selection shortcut. The model learned contrast presence and vessel density rather than lesion pathology.

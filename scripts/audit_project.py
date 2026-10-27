@@ -562,9 +562,123 @@ def check8() -> None:
         add("8 frame-classifier runs", "PASS", f"{len(frame_dirs)} eval dir(s); zero patient overlap between splits")
 
 
+# ---------------------------------------------------------------------------
+# Check 9: patient report reliability block vs metrics.json
+# ---------------------------------------------------------------------------
+RELIABILITY_METRIC_MAP = {
+    "precision": ("detection", "micro", "precision"),
+    "detector_box_precision": ("detection", "micro", "precision"),
+    "recall": ("detection", "micro", "recall"),
+    "detector_box_recall": ("detection", "micro", "recall"),
+    "f1": ("detection", "micro", "f1"),
+    "detector_box_f1": ("detection", "micro", "f1"),
+    "map_50": ("map", "mAP_50"),
+    "detector_box_map_50": ("map", "mAP_50"),
+    "false_alarm_share": ("detection", "micro", "false_alarm_share"),
+    "detector_false_alarm_share": ("detection", "micro", "false_alarm_share"),
+    "precision_ci_95": ("bootstrap", "precision"),
+    "detector_box_precision_ci_95": ("bootstrap", "precision"),
+    "recall_ci_95": ("bootstrap", "sensitivity"),
+    "detector_box_recall_ci_95": ("bootstrap", "sensitivity"),
+    "f1_ci_95": ("bootstrap", "f1"),
+    "detector_box_f1_ci_95": ("bootstrap", "f1"),
+    "map_50_ci_95": ("bootstrap", "mAP_50"),
+    "detector_box_map_50_ci_95": ("bootstrap", "mAP_50"),
+    "false_alarm_share_ci_95": ("bootstrap", "false_alarm_share"),
+    "detector_false_alarm_share_ci_95": ("bootstrap", "false_alarm_share"),
+}
+
+
+def check9() -> None:
+    reports_dir = ROOT / "outputs" / "reports"
+    if not reports_dir.exists():
+        add("9 report reliability numbers", "PASS", "no outputs/reports found")
+        return
+    report_jsons = sorted(reports_dir.glob("*/report.json"))
+    if not report_jsons:
+        add("9 report reliability numbers", "PASS", "no report.json files found")
+        return
+
+    bad = []
+    checked_count = 0
+
+    for rp in report_jsons:
+        try:
+            rdata = json.loads(rp.read_text(encoding="utf-8"))
+        except Exception as exc:
+            bad.append(f"{rp.parent.name}: unreadable JSON ({exc})")
+            continue
+
+        rel = rdata.get("reliability")
+        if not rel or not isinstance(rel, dict):
+            bad.append(f"{rp.parent.name}: missing or invalid reliability block")
+            continue
+
+        src = rel.get("metrics_source")
+        if not src:
+            bad.append(f"{rp.parent.name}: missing metrics_source")
+            continue
+
+        metrics_file = ROOT / src
+        if not metrics_file.exists():
+            bad.append(f"{rp.parent.name}: metrics_source not found ({src})")
+            continue
+
+        try:
+            mdata = json.loads(metrics_file.read_text(encoding="utf-8"))
+        except Exception as exc:
+            bad.append(f"{rp.parent.name}: unreadable metrics file {src}: {exc}")
+            continue
+
+        for k, v in rel.items():
+            if k in ("metrics_source", "false_alarm_sentence", "false_alarm_warning", "interpretive_warning"):
+                continue
+
+            if isinstance(v, (int, float)):
+                checked_count += 1
+                if k not in RELIABILITY_METRIC_MAP:
+                    bad.append(f"{rp.parent.name}.{k}: unmapped numeric metric in reliability block")
+                    continue
+                path = RELIABILITY_METRIC_MAP[k]
+                exp = dig(mdata, *path)
+                if exp is None and k in ("false_alarm_share", "detector_false_alarm_share"):
+                    tp = dig(mdata, "detection", "micro", "TP") or 0
+                    fp = dig(mdata, "detection", "micro", "FP") or 0
+                    exp = (fp / (tp + fp)) if (tp + fp) > 0 else 0.0
+                if exp is None:
+                    bad.append(f"{rp.parent.name}.{k}: cannot resolve {path} in {src}")
+                    continue
+                if abs(float(v) - float(exp)) > 1e-4:
+                    bad.append(f"{rp.parent.name}.{k}: report={v} metrics={exp}")
+
+            elif isinstance(v, (list, tuple)) and all(isinstance(x, (int, float)) for x in v):
+                checked_count += len(v)
+                if k not in RELIABILITY_METRIC_MAP:
+                    bad.append(f"{rp.parent.name}.{k}: unmapped CI metric in reliability block")
+                    continue
+                path = RELIABILITY_METRIC_MAP[k]
+                ci_dict = dig(mdata, *path)
+                if not isinstance(ci_dict, dict) or "lower" not in ci_dict or "upper" not in ci_dict:
+                    bad.append(f"{rp.parent.name}.{k}: cannot resolve CI {path} in {src}")
+                    continue
+                exp_lower = float(ci_dict["lower"])
+                exp_upper = float(ci_dict["upper"])
+                if len(v) != 2:
+                    bad.append(f"{rp.parent.name}.{k}: expected 2 elements in CI, got {len(v)}")
+                    continue
+                if abs(float(v[0]) - exp_lower) > 1e-4 or abs(float(v[1]) - exp_upper) > 1e-4:
+                    bad.append(f"{rp.parent.name}.{k}: report={v} metrics=[{exp_lower}, {exp_upper}]")
+
+    if bad:
+        add("9 report reliability numbers", "FAIL", "; ".join(bad[:5]))
+    else:
+        add("9 report reliability numbers", "PASS",
+            f"{len(report_jsons)} report(s) checked ({checked_count} numbers match metrics.json)")
+
+
 def main() -> int:
     rows.clear()
-    for fn in (check1, check2, check2b, check3, check4, check5, check6, check7, check8):
+    for fn in (check1, check2, check2b, check3, check4, check5, check6, check7, check8, check9):
         try:
             fn()
         except Exception as exc:

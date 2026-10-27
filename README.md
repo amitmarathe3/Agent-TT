@@ -448,12 +448,16 @@ python scripts/patient_report.py --input outputs/yolo_dataset/images/test --pati
 - `outputs/reports/<patient_id>/report.json` — Machine-readable structured findings and reliability statistics.
 
 ### Clinical Reliability & Validation Boundaries
-Numbers are read at runtime directly from test evaluation artifacts (`outputs/eval/exp_7class_yolo11s_oversample_run1_test/metrics.json`):
-- **Detector Box mAP@0.5**: 0.0095 [95% CI: 0.0021, 0.0389]
-- **Detector Box Recall**: 0.0481 [95% CI: 0.0227, 0.0677]
+Numbers are read at runtime directly from test evaluation artifacts (`outputs/eval/exp_7class_yolo11s_oversample_run1_544_test/metrics.json` at frozen validation threshold 0.0500):
+- **Detector Box Precision**: 0.0839 [95% CI: 0.0320, 0.1898]
+- **Detector Box Recall**: 0.0462 [95% CI: 0.0233, 0.0645]
+- **Detector Box F1**: 0.0596 [95% CI: 0.0270, 0.0892]
+- **Detector Box mAP@0.5**: 0.0107 [95% CI: 0.0029, 0.0438]
+- **False-Alarm Share FP/(TP+FP)**: 0.9161 [95% CI: 0.8102, 0.9680]
+- **False-Alarm Statement**: *"On held-out patients, about 92% of lesion candidates were false alarms. Candidates can appear in patients without disease, so their presence or number is not evidence of disease."*
 - **Interpretive Notice**: *"No lesion candidates found does NOT mean the patient is free of disease: the detector finds only a small fraction of true lesions."*
 - **Screening Invalidation**: Frame/video screening failed shortcut controls (chance performance on matched keyframes).
-- **Unmeasured Specificity**: No healthy control patients exist in the dataset (41/42 patients have confirmed CAD lesions).
+- **Unmeasured Specificity**: No non-CAD control patients exist in the dataset (41/42 patients have confirmed CAD lesions).
 - **Mandatory Review**: Review of the angiogram by a qualified cardiologist is required. This report must not be used for clinical decisions.
 
 ---

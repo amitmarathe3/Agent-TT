@@ -360,6 +360,7 @@ def compute_detection_metrics(
     micro_prec = all_tp / (all_tp + all_fp + 1e-9) if (all_tp + all_fp) > 0 else 0.0
     micro_rec = all_tp / (all_tp + all_fn + 1e-9) if (all_tp + all_fn) > 0 else 0.0
     micro_f1 = 2 * micro_prec * micro_rec / (micro_prec + micro_rec + 1e-9) if (micro_prec + micro_rec) > 0 else 0.0
+    fa_share = all_fp / (all_tp + all_fp + 1e-9) if (all_tp + all_fp) > 0 else 0.0
     mean_iou_all = total_iou_sum / all_tp if all_tp > 0 else 0.0
 
     return {
@@ -369,6 +370,7 @@ def compute_detection_metrics(
             "precision": round(micro_prec, 6),
             "recall": round(micro_rec, 6),
             "f1": round(micro_f1, 6),
+            "false_alarm_share": round(fa_share, 6),
             "mean_iou": round(mean_iou_all, 6),
         },
         "macro": {
@@ -982,12 +984,15 @@ def bootstrap_confidence_intervals(
     boot_map50: list[float] = []
     boot_sensitivity: list[float] = []
     boot_frame_auc: list[float] = []
+    boot_precision: list[float] = []
+    boot_f1: list[float] = []
+    boot_fa_share: list[float] = []
 
-    def _aggregate(mult: dict[str, int]) -> tuple[float, float, float, float]:
+    def _aggregate(mult: dict[str, int]) -> tuple[float, float, float, float, float, float, float]:
         """Aggregate cached stats over a frame-multiplicity map.
 
-        Returns (macro_f1, mAP_50, sensitivity, frame_auc). Shared by the
-        full-sample point estimate and every bootstrap draw, so all four
+        Returns (macro_f1, mAP_50, sensitivity, frame_auc, precision, f1, false_alarm_share).
+        Shared by the full-sample point estimate and every bootstrap draw, so all
         metrics are computed over exactly the same universe.
         """
         # ---- Detection F1 (micro / macro / sensitivity) ----
@@ -1012,6 +1017,9 @@ def bootstrap_confidence_intervals(
 
         atp, afp, afn = sum(tp.values()), sum(fp.values()), sum(fn.values())
         micro_r = atp / (atp + afn + 1e-9) if (atp + afn) > 0 else 0.0
+        micro_p = atp / (atp + afp + 1e-9) if (atp + afp) > 0 else 0.0
+        micro_f1 = 2 * micro_p * micro_r / (micro_p + micro_r + 1e-9) if (micro_p + micro_r) > 0 else 0.0
+        fa_share = afp / (atp + afp + 1e-9) if (atp + afp) > 0 else 0.0
 
         # ---- mAP@0.5 (mean over ALL class_ids; absent class -> 0.0) ----
         aps: list[float] = []
@@ -1043,7 +1051,7 @@ def bootstrap_confidence_intervals(
         fl = np.array([frame_label[f] for f in mult], dtype=np.int32)
         auc, _, _ = _compute_roc(fs, fl)
 
-        return macro_f1, map50, micro_r, float(auc)
+        return macro_f1, map50, micro_r, float(auc), micro_p, micro_f1, fa_share
 
     # ------------------------------------------------------------------
     # Full-sample point estimate (every frame exactly once). This is the
@@ -1051,7 +1059,15 @@ def bootstrap_confidence_intervals(
     # metrics.json values (macro F1 / mAP@0.5 / sensitivity / frame AUC).
     # ------------------------------------------------------------------
     full_mult = {fid: 1 for fid in frame_ids}
-    full_macro_f1, full_map50, full_sensitivity, full_frame_auc = _aggregate(full_mult)
+    (
+        full_macro_f1,
+        full_map50,
+        full_sensitivity,
+        full_frame_auc,
+        full_prec,
+        full_f1,
+        full_fa,
+    ) = _aggregate(full_mult)
 
     for _ in range(n_bootstrap):
         sampled_patients = rng.choice(all_patients, size=n_patients, replace=True)
@@ -1063,11 +1079,14 @@ def bootstrap_confidence_intervals(
             for fid in patient_to_frames.get(pat, []):
                 mult[fid] = mult.get(fid, 0) + 1
 
-        v_macro_f1, v_map50, v_sens, v_auc = _aggregate(mult)
+        v_macro_f1, v_map50, v_sens, v_auc, v_p, v_f1, v_fa = _aggregate(mult)
         boot_macro_f1.append(v_macro_f1)
         boot_map50.append(v_map50)
         boot_sensitivity.append(v_sens)
         boot_frame_auc.append(v_auc)
+        boot_precision.append(v_p)
+        boot_f1.append(v_f1)
+        boot_fa_share.append(v_fa)
 
     alpha = (1.0 - ci_level) / 2.0
 
@@ -1092,9 +1111,15 @@ def bootstrap_confidence_intervals(
             "mAP_50": round(full_map50, 6),
             "sensitivity": round(full_sensitivity, 6),
             "frame_auc": round(full_frame_auc, 6),
+            "precision": round(full_prec, 6),
+            "f1": round(full_f1, 6),
+            "false_alarm_share": round(full_fa, 6),
         },
         "macro_f1": _ci(boot_macro_f1),
         "mAP_50": _ci(boot_map50),
         "sensitivity": _ci(boot_sensitivity),
         "frame_auc": _ci(boot_frame_auc) if boot_frame_auc else None,
+        "precision": _ci(boot_precision),
+        "f1": _ci(boot_f1),
+        "false_alarm_share": _ci(boot_fa_share),
     }

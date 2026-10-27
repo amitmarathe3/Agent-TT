@@ -33,7 +33,7 @@
   <div class="header">
     <h1>Angiography Analysis Report: p11</h1>
     <div class="meta-grid">
-      <div><strong>Date:</strong> 2026-10-27 12:51:45</div>
+      <div><strong>Date:</strong> 2026-10-27 13:52:12</div>
       <div><strong>Frames Processed:</strong> 204</div>
       <div><strong>Model Used:</strong> best.pt (544_padded)</div>
       <div><strong>Threshold:</strong> 0.0500 (frozen from validation)</div>
@@ -144,9 +144,13 @@
   <div class="box-reliability">
     <h3>Detector Reliability (Evaluated on Unseen Patients)</h3>
     <ul>
-      <li><strong>Bounding Box mAP@0.5:</strong> 0.0095 (95% CI: [0.0021, 0.0389])</li>
-      <li><strong>Bounding Box Recall:</strong> 0.0481 (95% CI: [0.0227, 0.0677])</li>
+      <li><strong>Precision:</strong> 0.0839 (95% CI: [0.0320, 0.1898])</li>
+      <li><strong>Recall:</strong> 0.0462 (95% CI: [0.0233, 0.0645])</li>
+      <li><strong>F1-score:</strong> 0.0596 (95% CI: [0.0270, 0.0892])</li>
+      <li><strong>Bounding Box mAP@0.5:</strong> 0.0107 (95% CI: [0.0029, 0.0438])</li>
+      <li><strong>False-Alarm Share FP/(TP+FP):</strong> 0.9161 (95% CI: [0.8102, 0.9680])</li>
     </ul>
+    <p><strong>False-Alarm Warning:</strong> On held-out patients, about 92% of lesion candidates were false alarms. Candidates can appear in patients without disease, so their presence or number is not evidence of disease.</p>
     <p><strong>Clinical Warning:</strong> No lesion candidates found does NOT mean the patient is free of disease: the detector finds only a small fraction of true lesions.</p>
   </div>
 

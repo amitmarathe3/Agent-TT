@@ -52,19 +52,30 @@ CLASS_MAPPING = {
 
 def load_reliability_metrics() -> dict[str, Any]:
     """Read test metrics at runtime from metrics.json."""
-    metrics_path = ROOT / "outputs" / "eval" / "exp_7class_yolo11s_oversample_run1_test" / "metrics.json"
+    metrics_path = ROOT / "outputs" / "eval" / "exp_7class_yolo11s_oversample_run1_544_test" / "metrics.json"
     if not metrics_path.exists():
         # Fallback search if path differs
-        hits = sorted(glob.glob(str(ROOT / "outputs" / "eval" / "*run1*_test" / "metrics.json")))
+        hits = sorted(glob.glob(str(ROOT / "outputs" / "eval" / "*544*_test" / "metrics.json")))
         if hits:
             metrics_path = Path(hits[0])
+        else:
+            hits = sorted(glob.glob(str(ROOT / "outputs" / "eval" / "*run1*_test" / "metrics.json")))
+            if hits:
+                metrics_path = Path(hits[0])
 
     if not metrics_path.exists():
         return {
-            "map_50": None,
-            "map_50_ci": None,
+            "precision": None,
+            "precision_ci": None,
             "recall": None,
             "recall_ci": None,
+            "f1": None,
+            "f1_ci": None,
+            "map_50": None,
+            "map_50_ci": None,
+            "false_alarm_share": None,
+            "false_alarm_share_ci": None,
+            "false_alarm_sentence": "",
             "source": None,
         }
 
@@ -72,27 +83,62 @@ def load_reliability_metrics() -> dict[str, Any]:
         data = json.loads(metrics_path.read_text(encoding="utf-8"))
         boot = data.get("bootstrap", {})
         det = data.get("detection", {}).get("micro", {})
-        
-        map50 = boot.get("full_sample", {}).get("mAP_50", data.get("map", {}).get("mAP_50"))
-        map50_ci = [boot.get("mAP_50", {}).get("lower"), boot.get("mAP_50", {}).get("upper")] if "mAP_50" in boot else None
-        
+
+        precision = boot.get("full_sample", {}).get("precision", det.get("precision"))
+        precision_ci = [boot.get("precision", {}).get("lower"), boot.get("precision", {}).get("upper")] if "precision" in boot and boot["precision"] else None
+
         recall = boot.get("full_sample", {}).get("sensitivity", det.get("recall"))
-        recall_ci = [boot.get("sensitivity", {}).get("lower"), boot.get("sensitivity", {}).get("upper")] if "sensitivity" in boot else None
+        recall_ci = [boot.get("sensitivity", {}).get("lower"), boot.get("sensitivity", {}).get("upper")] if "sensitivity" in boot and boot["sensitivity"] else None
+
+        f1 = boot.get("full_sample", {}).get("f1", det.get("f1"))
+        f1_ci = [boot.get("f1", {}).get("lower"), boot.get("f1", {}).get("upper")] if "f1" in boot and boot["f1"] else None
+
+        map50 = boot.get("full_sample", {}).get("mAP_50", data.get("map", {}).get("mAP_50"))
+        map50_ci = [boot.get("mAP_50", {}).get("lower"), boot.get("mAP_50", {}).get("upper")] if "mAP_50" in boot and boot["mAP_50"] else None
+
+        fa_share = boot.get("full_sample", {}).get("false_alarm_share", det.get("false_alarm_share"))
+        if fa_share is None:
+            tp = det.get("TP", 0)
+            fp = det.get("FP", 0)
+            fa_share = fp / (tp + fp) if (tp + fp) > 0 else 0.0
+        fa_ci = [boot.get("false_alarm_share", {}).get("lower"), boot.get("false_alarm_share", {}).get("upper")] if "false_alarm_share" in boot and boot["false_alarm_share"] else None
+
+        fa_percent = round(float(fa_share) * 100)
+        fa_sentence = (
+            f"On held-out patients, about {fa_percent}% of lesion candidates were false alarms. "
+            "Candidates can appear in patients without disease, so their presence or number is not evidence of disease."
+        )
+
+        rel_source = str(metrics_path.relative_to(ROOT)).replace("\\", "/")
 
         return {
-            "map_50": round(float(map50), 4) if map50 is not None else None,
-            "map_50_ci": [round(float(c), 4) for c in map50_ci] if map50_ci and None not in map50_ci else None,
-            "recall": round(float(recall), 4) if recall is not None else None,
-            "recall_ci": [round(float(c), 4) for c in recall_ci] if recall_ci and None not in recall_ci else None,
-            "source": str(metrics_path.relative_to(ROOT)),
+            "precision": float(precision) if precision is not None else None,
+            "precision_ci": [float(c) for c in precision_ci] if precision_ci and None not in precision_ci else None,
+            "recall": float(recall) if recall is not None else None,
+            "recall_ci": [float(c) for c in recall_ci] if recall_ci and None not in recall_ci else None,
+            "f1": float(f1) if f1 is not None else None,
+            "f1_ci": [float(c) for c in f1_ci] if f1_ci and None not in f1_ci else None,
+            "map_50": float(map50) if map50 is not None else None,
+            "map_50_ci": [float(c) for c in map50_ci] if map50_ci and None not in map50_ci else None,
+            "false_alarm_share": float(fa_share) if fa_share is not None else None,
+            "false_alarm_share_ci": [float(c) for c in fa_ci] if fa_ci and None not in fa_ci else None,
+            "false_alarm_sentence": fa_sentence,
+            "source": rel_source,
         }
     except Exception as exc:
         logger.warning("Could not read reliability metrics: %s", exc)
         return {
-            "map_50": None,
-            "map_50_ci": None,
+            "precision": None,
+            "precision_ci": None,
             "recall": None,
             "recall_ci": None,
+            "f1": None,
+            "f1_ci": None,
+            "map_50": None,
+            "map_50_ci": None,
+            "false_alarm_share": None,
+            "false_alarm_share_ci": None,
+            "false_alarm_sentence": "",
             "source": None,
         }
 
@@ -272,15 +318,22 @@ def main() -> None:
     out_dir = Path(args.out) if args.out else ROOT / "outputs" / "reports" / patient_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    weights_path = Path(args.weights) if args.weights else ROOT / "outputs" / "runs" / "exp_7class_yolo11s_oversample_run1" / "weights" / "best.pt"
+    if args.weights:
+        weights_path = Path(args.weights)
+    else:
+        weights_path = ROOT / "outputs" / "runs" / "exp_7class_yolo11s_oversample_run1_544" / "weights" / "best.pt"
+        if not weights_path.exists():
+            weights_path = ROOT / "outputs" / "runs" / "exp_7class_yolo11s_oversample_run1" / "weights" / "best.pt"
     if not weights_path.exists():
         raise FileNotFoundError(f"Model weights not found: {weights_path}")
 
-    # Frozen threshold: default 0.05
+    # Frozen threshold: default from threshold.json
     if args.conf is not None:
         conf_thresh = args.conf
     else:
-        thresh_file = ROOT / "outputs" / "runs" / "exp_7class_yolo11s_oversample_run1" / "threshold.json"
+        thresh_file = ROOT / "outputs" / "runs" / "exp_7class_yolo11s_oversample_run1_544" / "threshold.json"
+        if not thresh_file.exists():
+            thresh_file = ROOT / "outputs" / "runs" / "exp_7class_yolo11s_oversample_run1" / "threshold.json"
         if thresh_file.exists():
             try:
                 tdata = json.loads(thresh_file.read_text(encoding="utf-8"))
@@ -405,15 +458,22 @@ def main() -> None:
             ],
         },
         "reliability": {
-            "detector_box_map_50": rel_metrics["map_50"],
-            "detector_box_map_50_ci_95": rel_metrics["map_50_ci"],
-            "detector_box_recall": rel_metrics["recall"],
-            "detector_box_recall_ci_95": rel_metrics["recall_ci"],
-            "metrics_source": rel_metrics["source"],
+            "precision": round(float(rel_metrics["precision"]), 6) if rel_metrics["precision"] is not None else None,
+            "precision_ci_95": [round(float(c), 6) for c in rel_metrics["precision_ci"]] if rel_metrics["precision_ci"] else None,
+            "recall": round(float(rel_metrics["recall"]), 6) if rel_metrics["recall"] is not None else None,
+            "recall_ci_95": [round(float(c), 6) for c in rel_metrics["recall_ci"]] if rel_metrics["recall_ci"] else None,
+            "f1": round(float(rel_metrics["f1"]), 6) if rel_metrics["f1"] is not None else None,
+            "f1_ci_95": [round(float(c), 6) for c in rel_metrics["f1_ci"]] if rel_metrics["f1_ci"] else None,
+            "map_50": round(float(rel_metrics["map_50"]), 6) if rel_metrics["map_50"] is not None else None,
+            "map_50_ci_95": [round(float(c), 6) for c in rel_metrics["map_50_ci"]] if rel_metrics["map_50_ci"] else None,
+            "false_alarm_share": round(float(rel_metrics["false_alarm_share"]), 6) if rel_metrics["false_alarm_share"] is not None else None,
+            "false_alarm_share_ci_95": [round(float(c), 6) for c in rel_metrics["false_alarm_share_ci"]] if rel_metrics["false_alarm_share_ci"] else None,
+            "false_alarm_sentence": rel_metrics["false_alarm_sentence"],
             "interpretive_warning": (
                 "No lesion candidates found does NOT mean the patient is free of disease: "
                 "the detector finds only a small fraction of true lesions."
             ),
+            "metrics_source": rel_metrics["source"],
         },
         "not_validated": {
             "screening_shortcut": (
@@ -524,9 +584,13 @@ def main() -> None:
   <div class="box-reliability">
     <h3>Detector Reliability (Evaluated on Unseen Patients)</h3>
     <ul>
-      <li><strong>Bounding Box mAP@0.5:</strong> {rel_metrics['map_50']} (95% CI: {rel_metrics['map_50_ci']})</li>
-      <li><strong>Bounding Box Recall:</strong> {rel_metrics['recall']} (95% CI: {rel_metrics['recall_ci']})</li>
+      <li><strong>Precision:</strong> {rel_metrics['precision']:.4f}{f" (95% CI: [{rel_metrics['precision_ci'][0]:.4f}, {rel_metrics['precision_ci'][1]:.4f}])" if rel_metrics['precision_ci'] else ""}</li>
+      <li><strong>Recall:</strong> {rel_metrics['recall']:.4f}{f" (95% CI: [{rel_metrics['recall_ci'][0]:.4f}, {rel_metrics['recall_ci'][1]:.4f}])" if rel_metrics['recall_ci'] else ""}</li>
+      <li><strong>F1-score:</strong> {rel_metrics['f1']:.4f}{f" (95% CI: [{rel_metrics['f1_ci'][0]:.4f}, {rel_metrics['f1_ci'][1]:.4f}])" if rel_metrics['f1_ci'] else ""}</li>
+      <li><strong>Bounding Box mAP@0.5:</strong> {rel_metrics['map_50']:.4f}{f" (95% CI: [{rel_metrics['map_50_ci'][0]:.4f}, {rel_metrics['map_50_ci'][1]:.4f}])" if rel_metrics['map_50_ci'] else ""}</li>
+      <li><strong>False-Alarm Share FP/(TP+FP):</strong> {rel_metrics['false_alarm_share']:.4f}{f" (95% CI: [{rel_metrics['false_alarm_share_ci'][0]:.4f}, {rel_metrics['false_alarm_share_ci'][1]:.4f}])" if rel_metrics['false_alarm_share_ci'] else ""}</li>
     </ul>
+    <p><strong>False-Alarm Warning:</strong> {rel_metrics['false_alarm_sentence']}</p>
     <p><strong>Clinical Warning:</strong> No lesion candidates found does NOT mean the patient is free of disease: the detector finds only a small fraction of true lesions.</p>
   </div>
 

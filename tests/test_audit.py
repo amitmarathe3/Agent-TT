@@ -85,9 +85,41 @@ def test_audit_flags_missing_best_pt(tmp_path: Path) -> None:
     assert "best.pt" in detail_after, f"detail should mention best.pt: {detail_after}"
 
 
+def test_audit_flags_report_reliability_mismatch(tmp_path: Path) -> None:
+    _build_project(tmp_path)
+    rep_dir = tmp_path / "outputs" / "reports" / "p1"
+    rep_dir.mkdir(parents=True)
+    report_data = {
+        "reliability": {
+            "precision": 0.5,
+            "recall": 0.5,
+            "f1": 0.5,
+            "map_50": 0.5,
+            "metrics_source": f"outputs/eval/{RUN}_test/metrics.json",
+        }
+    }
+    rep_file = rep_dir / "report.json"
+    rep_file.write_text(json.dumps(report_data), encoding="utf-8")
+
+    # Baseline: matches metrics.json (0.5) -> check 9 PASS.
+    before = _run_audit(tmp_path)
+    status_before, detail_before = _parse_check(before.stdout, "9 report reliability")
+    assert status_before == "PASS", f"expected check9 PASS, got {status_before}: {detail_before}"
+
+    # Tamper with precision: 0.5 -> 0.99 -> check 9 FAIL.
+    report_data["reliability"]["precision"] = 0.99
+    rep_file.write_text(json.dumps(report_data), encoding="utf-8")
+    after = _run_audit(tmp_path)
+    status_after, detail_after = _parse_check(after.stdout, "9 report reliability")
+    assert status_after == "FAIL", f"expected check9 FAIL, got {status_after}: {detail_after}"
+    assert "precision" in detail_after, f"detail should mention precision: {detail_after}"
+
+
 if __name__ == "__main__":
     # Allow running directly for a quick smoke check.
     import tempfile
     with tempfile.TemporaryDirectory() as td:
         test_audit_flags_missing_best_pt(Path(td))
-    print("test_audit_flags_missing_best_pt: PASS")
+        test_audit_flags_report_reliability_mismatch(Path(td))
+    print("all test_audit tests: PASS")
+
